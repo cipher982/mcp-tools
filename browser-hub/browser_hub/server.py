@@ -157,6 +157,41 @@ def build_params(
     return params
 
 
+def extract_content(result) -> str:
+    """
+    Extract content from MCP result, handling both text and image content.
+
+    Returns formatted string with:
+    - TextContent: extracted text
+    - ImageContent: data URI (data:{mimeType};base64,{data})
+    - Mixed content: both types with labels
+    """
+    if not result.content:
+        return "Action completed (no output)"
+
+    output_parts = []
+
+    for item in result.content:
+        # Check content type via type attribute (MCP protocol)
+        content_type = getattr(item, "type", None)
+
+        if content_type == "text" and hasattr(item, "text"):
+            # TextContent: extract text
+            output_parts.append(item.text)
+
+        elif content_type == "image" and hasattr(item, "data") and hasattr(item, "mimeType"):
+            # ImageContent: format as data URI
+            data_uri = f"data:{item.mimeType};base64,{item.data}"
+            output_parts.append(data_uri)
+
+        else:
+            # Unknown content type - log warning but don't fail
+            # (In production, could log to stderr or proper logger)
+            pass
+
+    return "\n".join(output_parts) if output_parts else "Action completed (no output)"
+
+
 @mcp.tool()
 async def browser(
     action: Literal[
@@ -217,13 +252,8 @@ async def browser(
     try:
         client = await _connect_playwright()
         result = await client.call_tool(tool_name, params)
-        # Extract text content from result
-        if result.content:
-            return "\n".join(
-                item.text for item in result.content
-                if hasattr(item, "text")
-            )
-        return "Action completed (no output)"
+        # Extract content (handles both text and images)
+        return extract_content(result)
     except Exception as e:
         return f"Error: {e}"
 
@@ -298,14 +328,9 @@ async def browser_batch(
 
             try:
                 result = await client.call_tool(tool_name, params)
-                if result.content:
-                    text_content = "\n".join(
-                        item.text for item in result.content
-                        if hasattr(item, "text")
-                    )
-                    results.append(text_content or "Action completed")
-                else:
-                    results.append("Action completed")
+                # Extract content (handles both text and images)
+                content = extract_content(result)
+                results.append(content)
             except Exception as e:
                 results.append(f"Step {i} error: {e}")
                 break  # Stop on error
