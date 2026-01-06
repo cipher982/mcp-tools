@@ -8,6 +8,8 @@ Maintains persistent Playwright connection for stateful browser sessions.
 import asyncio
 import atexit
 from typing import Literal, Any
+
+import mcp.types as mcp_types
 from fastmcp import FastMCP, Client
 from fastmcp.client.transports import StdioTransport
 
@@ -157,37 +159,51 @@ def build_params(
     return params
 
 
-def extract_content(result) -> str:
+def extract_content(result) -> list[mcp_types.ContentBlock]:
     """
-    Extract content from MCP result, handling both text and image content.
+    Extract content blocks from an MCP result, preserving rich content types.
 
-    Returns formatted string with:
-    - TextContent: extracted text
-    - ImageContent: data URI (data:{mimeType};base64,{data})
-    - Mixed content: both types with labels
+    Important: Do NOT convert ImageContent to text (e.g., data URIs). Doing so can
+    explode token usage (base64 screenshots) and break downstream model calls.
     """
-    if not result.content:
+    content = getattr(result, "content", None)
+    if not content:
+        return [mcp_types.TextContent(type="text", text="Action completed (no output)")]
+
+    output_blocks: list[mcp_types.ContentBlock] = []
+    for item in content:
+        if isinstance(item, mcp_types.ContentBlock):
+            output_blocks.append(item)
+        else:
+            output_blocks.append(
+                mcp_types.TextContent(type="text", text=str(item))
+            )
+
+    return output_blocks or [
+        mcp_types.TextContent(type="text", text="Action completed (no output)")
+    ]
+
+
+def extract_text_only(result) -> str:
+    """
+    Extract only text from an MCP result, omitting binary payloads.
+
+    Use this for batch results to avoid massive responses when a step returns an image.
+    """
+    content = getattr(result, "content", None)
+    if not content:
         return "Action completed (no output)"
 
-    output_parts = []
-
-    for item in result.content:
-        # Check content type via type attribute (MCP protocol)
+    output_parts: list[str] = []
+    for item in content:
         content_type = getattr(item, "type", None)
-
-        if content_type == "text" and hasattr(item, "text"):
-            # TextContent: extract text
+        if content_type == "text" and hasattr(item, "text") and item.text:
             output_parts.append(item.text)
-
-        elif content_type == "image" and hasattr(item, "data") and hasattr(item, "mimeType"):
-            # ImageContent: format as data URI
-            data_uri = f"data:{item.mimeType};base64,{item.data}"
-            output_parts.append(data_uri)
-
-        else:
-            # Unknown content type - log warning but don't fail
-            # (In production, could log to stderr or proper logger)
-            pass
+        elif content_type == "image":
+            mime_type = getattr(item, "mimeType", "image/*")
+            data = getattr(item, "data", None)
+            data_len = len(data) if isinstance(data, str) else 0
+            output_parts.append(f"[image omitted: {mime_type} ({data_len} base64 chars)]")
 
     return "\n".join(output_parts) if output_parts else "Action completed (no output)"
 
@@ -206,7 +222,7 @@ async def browser(
     script: str | None = None,
     values: list[str] | None = None,
     timeout: float | None = None,
-) -> str:
+) -> list[mcp_types.ContentBlock]:
     """
     Browser automation with persistent session.
 
@@ -243,19 +259,19 @@ async def browser(
                     pass  # Browser may already be closed, continue with disconnect
             # Then disconnect the MCP session
             await _disconnect_playwright()
-            return "Browser closed and disconnected"
+            return [mcp_types.TextContent(type="text", text="Browser closed and disconnected")]
         except Exception as e:
-            return f"Error closing browser: {e}"
+            return [mcp_types.TextContent(type="text", text=f"Error closing browser: {e}")]
 
     params = build_params(action, url, ref, element, text, key, script, values, timeout)
 
     try:
         client = await _connect_playwright()
         result = await client.call_tool(tool_name, params)
-        # Extract content (handles both text and images)
+        # Preserve content blocks (text + image, etc.)
         return extract_content(result)
     except Exception as e:
-        return f"Error: {e}"
+        return [mcp_types.TextContent(type="text", text=f"Error: {e}")]
 
 
 @mcp.tool()
@@ -328,9 +344,8 @@ async def browser_batch(
 
             try:
                 result = await client.call_tool(tool_name, params)
-                # Extract content (handles both text and images)
-                content = extract_content(result)
-                results.append(content)
+                # Extract text only to avoid large binary payloads in batch mode.
+                results.append(extract_text_only(result))
             except Exception as e:
                 results.append(f"Step {i} error: {e}")
                 break  # Stop on error

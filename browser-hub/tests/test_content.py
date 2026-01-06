@@ -1,94 +1,69 @@
 """Tests for content extraction functionality."""
-import pytest
-from browser_hub.server import extract_content
 
-
-class MockTextContent:
-    """Mock MCP TextContent."""
-    def __init__(self, text: str):
-        self.type = "text"
-        self.text = text
-
-
-class MockImageContent:
-    """Mock MCP ImageContent."""
-    def __init__(self, data: str, mime_type: str = "image/png"):
-        self.type = "image"
-        self.data = data
-        self.mimeType = mime_type
+import mcp.types
+from browser_hub.server import extract_content, extract_text_only
 
 
 class MockResult:
-    """Mock MCP CallToolResult."""
-    def __init__(self, content: list):
+    def __init__(self, content):
         self.content = content
 
 
 def test_extract_content_handles_text():
     """Test that extract_content properly extracts TextContent."""
-    result = MockResult([
-        MockTextContent("Hello, world!"),
-    ])
-
-    output = extract_content(result)
-    assert output == "Hello, world!"
+    result = MockResult([mcp.types.TextContent(type="text", text="Hello, world!")])
+    blocks = extract_content(result)
+    assert blocks == [mcp.types.TextContent(type="text", text="Hello, world!")]
 
 
 def test_extract_content_handles_multiple_text():
     """Test that extract_content handles multiple TextContent items."""
-    result = MockResult([
-        MockTextContent("Line 1"),
-        MockTextContent("Line 2"),
-        MockTextContent("Line 3"),
-    ])
-
-    output = extract_content(result)
-    assert output == "Line 1\nLine 2\nLine 3"
+    result = MockResult(
+        [
+            mcp.types.TextContent(type="text", text="Line 1"),
+            mcp.types.TextContent(type="text", text="Line 2"),
+            mcp.types.TextContent(type="text", text="Line 3"),
+        ]
+    )
+    blocks = extract_content(result)
+    assert [b.text for b in blocks if b.type == "text"] == ["Line 1", "Line 2", "Line 3"]
 
 
 def test_extract_content_handles_image():
-    """Test that extract_content properly handles ImageContent."""
-    result = MockResult([
-        MockImageContent("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="),
-    ])
-
-    output = extract_content(result)
-    assert output.startswith("data:image/png;base64,")
-    assert "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" in output
+    """Test that extract_content preserves ImageContent blocks (no data URI conversion)."""
+    img = mcp.types.ImageContent(
+        type="image",
+        mimeType="image/png",
+        data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    )
+    result = MockResult([img])
+    blocks = extract_content(result)
+    assert blocks == [img]
 
 
 def test_extract_content_handles_image_with_custom_mime():
     """Test that extract_content uses correct MIME type for images."""
-    result = MockResult([
-        MockImageContent("base64data", "image/jpeg"),
-    ])
-
-    output = extract_content(result)
-    assert output == "data:image/jpeg;base64,base64data"
+    img = mcp.types.ImageContent(type="image", mimeType="image/jpeg", data="base64data")
+    result = MockResult([img])
+    blocks = extract_content(result)
+    assert blocks == [img]
 
 
 def test_extract_content_handles_mixed_content():
     """Test that extract_content handles mixed text and image content."""
-    result = MockResult([
-        MockTextContent("Screenshot of page:"),
-        MockImageContent("imagedata123", "image/png"),
-        MockTextContent("Additional info"),
-    ])
-
-    output = extract_content(result)
-    lines = output.split("\n")
-    assert len(lines) == 3
-    assert lines[0] == "Screenshot of page:"
-    assert lines[1] == "data:image/png;base64,imagedata123"
-    assert lines[2] == "Additional info"
+    t1 = mcp.types.TextContent(type="text", text="Screenshot of page:")
+    img = mcp.types.ImageContent(type="image", mimeType="image/png", data="imagedata123")
+    t2 = mcp.types.TextContent(type="text", text="Additional info")
+    result = MockResult([t1, img, t2])
+    blocks = extract_content(result)
+    assert blocks == [t1, img, t2]
 
 
 def test_extract_content_handles_empty_content():
     """Test that extract_content handles empty content list."""
     result = MockResult([])
-
-    output = extract_content(result)
-    assert output == "Action completed (no output)"
+    blocks = extract_content(result)
+    assert blocks == [mcp.types.TextContent(type="text", text="Action completed (no output)")]
 
 
 def test_extract_content_handles_none_content():
@@ -97,25 +72,21 @@ def test_extract_content_handles_none_content():
         content = None
 
     result = EmptyResult()
-    output = extract_content(result)
-    assert output == "Action completed (no output)"
+    blocks = extract_content(result)
+    assert blocks == [mcp.types.TextContent(type="text", text="Action completed (no output)")]
 
 
 def test_extract_content_skips_unknown_types():
-    """Test that extract_content gracefully skips unknown content types."""
-    class UnknownContent:
-        type = "unknown"
-        data = "something"
-
-    result = MockResult([
-        MockTextContent("Valid text"),
-        UnknownContent(),
-        MockTextContent("More valid text"),
-    ])
-
-    output = extract_content(result)
-    # Unknown type should be skipped, only text remains
-    assert output == "Valid text\nMore valid text"
+    """Unknown items are stringified into TextContent."""
+    t1 = mcp.types.TextContent(type="text", text="Valid text")
+    unknown = object()
+    t2 = mcp.types.TextContent(type="text", text="More valid text")
+    result = MockResult([t1, unknown, t2])
+    blocks = extract_content(result)
+    assert blocks[0] == t1
+    assert blocks[2] == t2
+    assert blocks[1].type == "text"
+    assert blocks[1].text  # has some repr
 
 
 def test_extract_content_handles_malformed_content():
@@ -124,26 +95,25 @@ def test_extract_content_handles_malformed_content():
         # No type attribute
         pass
 
-    result = MockResult([
-        MockTextContent("Good content"),
-        MalformedContent(),
-    ])
-
-    output = extract_content(result)
-    # Should only extract the good content
-    assert output == "Good content"
+    t1 = mcp.types.TextContent(type="text", text="Good content")
+    result = MockResult([t1, MalformedContent()])
+    blocks = extract_content(result)
+    assert blocks[0] == t1
+    assert blocks[1].type == "text"
 
 
 def test_extract_content_only_unknown_types():
     """Test behavior when all content items are unknown types."""
-    class UnknownContent:
-        type = "unknown"
+    result = MockResult([object(), object()])
+    blocks = extract_content(result)
+    assert len(blocks) == 2
+    assert all(b.type == "text" for b in blocks)
 
-    result = MockResult([
-        UnknownContent(),
-        UnknownContent(),
-    ])
 
-    output = extract_content(result)
-    # Should return no output message when no valid content
-    assert output == "Action completed (no output)"
+def test_extract_text_only_omits_images():
+    img = mcp.types.ImageContent(type="image", mimeType="image/png", data="base64data")
+    t1 = mcp.types.TextContent(type="text", text="Hello")
+    result = MockResult([t1, img])
+    output = extract_text_only(result)
+    assert "Hello" in output
+    assert "image omitted" in output

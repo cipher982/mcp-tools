@@ -1,12 +1,20 @@
 """Tests for persistent connection management."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import mcp.types
 from browser_hub import server
 
 
 # Get the actual function from the FunctionTool wrapper
 browser_func = server.browser.fn
 browser_batch_func = server.browser_batch.fn
+
+
+def _content_text(blocks: list[mcp.types.ContentBlock]) -> str:
+    return "\n".join(
+        b.text for b in blocks if getattr(b, "type", None) == "text" and getattr(b, "text", None)
+    )
 
 
 @pytest.fixture
@@ -111,13 +119,13 @@ async def test_browser_close_action_disconnects(reset_globals):
             server._playwright_connected = True
             server._playwright_client = mock_client
 
-            result = await browser_func(action="close")
+            blocks = await browser_func(action="close")
 
             # Should attempt to call browser_close on client
             mock_client.call_tool.assert_called_once_with("browser_close", {})
             # Should disconnect
             mock_disconnect.assert_called_once()
-            assert "closed and disconnected" in result.lower()
+            assert "closed and disconnected" in _content_text(blocks).lower()
 
 
 @pytest.mark.asyncio
@@ -208,13 +216,14 @@ async def test_connection_survives_errors(reset_globals):
         mock_connect.return_value = mock_client
 
         # First call fails
-        result1 = await browser_func(action="navigate", url="bad-url")
-        assert "Error:" in result1
+        blocks1 = await browser_func(action="navigate", url="bad-url")
+        assert "error:" in _content_text(blocks1).lower()
 
         # Connection should still be alive for second call
-        result2 = await browser_func(action="snapshot")
+        blocks2 = await browser_func(action="snapshot")
         # Should succeed (or at least not complain about connection)
-        assert "Error:" not in result2 or "Connection error" not in result2
+        text2 = _content_text(blocks2).lower()
+        assert "connection error" not in text2
 
 
 @pytest.mark.asyncio

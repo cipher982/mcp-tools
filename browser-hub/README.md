@@ -75,7 +75,7 @@ browser(action="type", ref="E6", text="user@example.com")
 browser(action="press_key", key="Enter")
 
 # Screenshot
-browser(action="screenshot")
+browser(action="screenshot")  # Returns ImageContent (renders as an image in Claude Code)
 
 # Wait for text
 browser(action="wait_for", text="Welcome")

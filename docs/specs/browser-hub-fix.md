@@ -57,10 +57,10 @@ Screenshots return `ImageContent`, which is filtered out → "Action completed (
 **Revisit if:** Memory leaks observed in long-running sessions
 
 ### Decision: Return base64 images inline for screenshots
-**Context:** Could return base64 inline, write to temp file, or skip
-**Choice:** Return base64 data URI for image content
-**Rationale:** Allows Claude to "see" screenshots; temp files add complexity
-**Revisit if:** Base64 bloats responses too much (could add size limit)
+**Context:** Could stringify images (data URIs), return `ImageContent`, write to temp file, or skip
+**Choice:** Preserve `ImageContent` blocks (do not convert to data URIs in text)
+**Rationale:** Data URIs explode token usage; `ImageContent` lets the client treat images as images
+**Revisit if:** Client can't render ImageContent (fallback to saved file paths)
 
 ### Decision: Pin Playwright MCP version
 **Context:** Currently uses `@playwright/mcp@latest`
@@ -99,7 +99,7 @@ browser(action="close") OR Server Shutdown
 MCP Result
     │
     ├─→ TextContent → Extract .text
-    ├─→ ImageContent → Convert to data URI (data:image/png;base64,...)
+    ├─→ ImageContent → Preserve as ImageContent (no data URI conversion)
     └─→ Other → Log warning, skip
     │
     ▼
@@ -148,26 +148,26 @@ Handle ImageContent from screenshots.
 
 **Changes:**
 - ✅ Check content item type before extraction
-- ✅ For ImageContent: return `data:{mimeType};base64,{data}`
+- ✅ For ImageContent: preserve `ImageContent` blocks (avoid data URIs)
 - ✅ Add content type to output when mixed (text + image)
 
 **Acceptance Criteria:**
-- [x] `browser(action="screenshot")` returns base64 data URI
+- [x] `browser(action="screenshot")` returns `ImageContent` (renderable image)
 - [x] Text content still works as before
 - [x] Mixed content (text + image) handled gracefully
 
 **Implementation Details:**
 - Added `extract_content()` helper function that checks `type` attribute of content items
 - TextContent (type="text"): extracts `.text` attribute
-- ImageContent (type="image"): formats as `data:{mimeType};base64,{data}`
+- ImageContent (type="image"): preserved as `ImageContent` (no stringification)
 - Mixed content: joins all parts with newlines
-- Both `browser()` and `browser_batch()` use the helper
+- `browser()` preserves rich content (text + images); `browser_batch()` extracts text only to avoid large binary payloads in batched output
 - Gracefully handles unknown content types (skips with no error)
 
 **Test:**
 ```bash
 browser(action="navigate", url="https://example.com")
-browser(action="screenshot")  # Should return data:image/png;base64,...
+browser(action="screenshot")  # Should return an ImageContent screenshot
 ```
 
 ### Phase 3: Integration Tests
