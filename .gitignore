@@ -48,3 +48,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# CLAUDE.md symlinks (local-only, never commit)
+CLAUDE.md

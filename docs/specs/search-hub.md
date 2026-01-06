@@ -12,9 +12,9 @@ Replace the bloated `openai-websearch-mcp` (5.2k tokens due to timezone enum) wi
 **Rationale:** Simpler, no subprocess management, direct control over parameters
 **Revisit if:** Need to support multiple search backends
 
-### Decision: Fixed model gpt-5.2 with reasoning
+### Decision: Use gpt-5.2 with reasoning
 **Context:** User spec explicitly required gpt-5.2 with reasoning support
-**Choice:** Fixed to gpt-5.2, expose reasoning_effort parameter
+**Choice:** Use gpt-5.2 model, expose reasoning_effort parameter
 **Rationale:** GPT-5.2 provides better web search with reasoning capabilities
 **Revisit if:** Cost becomes a concern
 
@@ -39,7 +39,7 @@ Claude Code
 search-hub (FastMCP server, ~150 tokens)
     │ Direct API call
     ▼
-OpenAI Responses API (gpt-4o-mini + web_search tool)
+OpenAI Responses API (gpt-5.2 + web_search_preview tool)
     │
     ▼
 Web search results + synthesized answer
@@ -53,20 +53,20 @@ Web search results + synthesized answer
 Create minimal FastMCP server with single `web_research` tool.
 
 **Deliverables:**
-- `tools/search-hub/pyproject.toml` ✓
-- `tools/search-hub/search_hub/__init__.py` ✓
-- `tools/search-hub/search_hub/server.py` ✓
-- `tools/search-hub/README.md` ✓
+- `search-hub/pyproject.toml` ✓
+- `search-hub/search_hub/__init__.py` ✓
+- `search-hub/search_hub/server.py` ✓
+- `search-hub/README.md` ✓
 
 **Acceptance Criteria:**
 - [x] Tool schema is <300 tokens (117 tokens achieved)
-- [x] `web_research(task: str, model: str)` returns synthesized answer
+- [x] `web_research(task: str, reasoning_effort: str)` returns synthesized answer
 - [x] Uses OpenAI Responses API with `tools=[{"type": "web_search_preview"}]`
-- [x] Returns structured output: `{"answer": "...", "citations": [...]}`
+- [x] Returns structured output: `{"answer": "...", "sources": [...]}`
 
 **Test Results:**
 ```bash
-cd ~/git/me/mytech/tools/search-hub
+cd ~/git/mcp-tools/search-hub
 uv sync  # Installed successfully
 # Tool schema: ~117 tokens (469 chars)
 # Server starts and responds to MCP protocol correctly
@@ -97,8 +97,8 @@ Configure in Claude Code, disable old openai-websearch-mcp.
 "search-hub": {
   "type": "stdio",
   "command": "uv",
-  "args": ["run", "--directory", "/Users/davidrose/git/me/mytech/tools/search-hub", "search-hub"],
-  "env": {"OPENAI_API_KEY": "..."}
+  "args": ["run", "--directory", "/path/to/search-hub", "search-hub"],
+  "env": {"OPENAI_API_KEY": "your-api-key-here"}
 }
 ```
 
@@ -111,17 +111,18 @@ End-to-end validation that search works correctly.
 - Answer extraction was looking for wrong output type (`output_text` instead of `message`)
 - Fixed to use `response.output_text` attribute directly (simplest path)
 - Fixed fallback to extract from `message.content[].text`
+- Sources extracted from `web_search_call.action.sources`
 
 **Acceptance Criteria:**
 - [x] `web_research("What is the current price of Bitcoin?")` returns live data
-- [~] Response includes citations with URLs (gpt-4o-mini doesn't include URL citations in annotations)
+- [x] Response includes sources with URLs when available
 - [x] No regressions in other MCP tools
 
 **Test Results:**
 ```json
 {
   "answer": "As of January 6, 2026, Bitcoin (BTC) is trading at approximately $92,070 USD...",
-  "citations": []
+  "sources": [...]
 }
 ```
 
@@ -136,15 +137,16 @@ End-to-end validation that search works correctly.
 @mcp.tool()
 def web_research(
     task: str,
-    model: Literal["gpt-4o-mini", "gpt-4o"] = "gpt-4o-mini",
+    reasoning_effort: Literal["low", "medium", "high"] = "medium",
 ) -> str:
     """
-    Research a topic using web search. Pass a complete question or task, not keywords.
+    Research a topic using web search with GPT-5.2 reasoning.
+    Pass complete questions or tasks, not keywords.
 
-    Good: "What are the latest developments in quantum computing as of 2025?"
+    Good: "What are the latest quantum computing breakthroughs in 2025?"
     Bad: "quantum computing news"
 
-    Returns a synthesized answer with citations.
+    Returns synthesized answer with source URLs.
     """
 ```
 
@@ -153,8 +155,8 @@ def web_research(
 ```json
 {
   "answer": "The synthesized answer from the model...",
-  "citations": [
-    {"title": "Page Title", "url": "https://..."},
+  "sources": [
+    {"url": "https://..."},
     ...
   ]
 }
@@ -164,6 +166,6 @@ def web_research(
 
 | File | Purpose |
 |------|---------|
-| `tools/search-hub/pyproject.toml` | Package definition |
-| `tools/search-hub/search_hub/server.py` | FastMCP server with web_research tool |
+| `search-hub/pyproject.toml` | Package definition |
+| `search-hub/search_hub/server.py` | FastMCP server with web_research tool |
 | `docs/specs/search-hub.md` | This spec |
