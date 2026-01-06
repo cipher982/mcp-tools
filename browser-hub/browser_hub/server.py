@@ -26,6 +26,7 @@ mcp = FastMCP(
 
 # Global state for persistent Playwright connection
 _playwright_client: Client | None = None
+_playwright_connected: bool = False
 _playwright_lock = asyncio.Lock()
 
 
@@ -43,6 +44,31 @@ async def get_playwright() -> Client:
             _playwright_client = Client(transport)
 
         return _playwright_client
+
+
+async def _connect_playwright() -> Client:
+    """Ensure Playwright client is connected. Connects once, stays connected."""
+    global _playwright_connected
+
+    client = await get_playwright()
+
+    async with _playwright_lock:
+        if not _playwright_connected:
+            await client.connect()
+            _playwright_connected = True
+
+    return client
+
+
+async def _disconnect_playwright():
+    """Disconnect from Playwright and cleanup."""
+    global _playwright_client, _playwright_connected
+
+    async with _playwright_lock:
+        if _playwright_client is not None and _playwright_connected:
+            await _playwright_client.disconnect()
+            _playwright_connected = False
+            _playwright_client = None
 
 
 # Map our simplified actions to Playwright MCP tool names
@@ -166,19 +192,26 @@ async def browser(
     if not tool_name:
         return f"Unknown action: {action}. Valid actions: {list(TOOL_MAP.keys())}"
 
+    # Handle close action specially - disconnect
+    if action == "close":
+        try:
+            await _disconnect_playwright()
+            return "Browser closed and disconnected"
+        except Exception as e:
+            return f"Error closing browser: {e}"
+
     params = build_params(action, url, ref, element, text, key, script, values, timeout)
 
     try:
-        client = await get_playwright()
-        async with client:
-            result = await client.call_tool(tool_name, params)
-            # Extract text content from result
-            if result.content:
-                return "\n".join(
-                    item.text for item in result.content
-                    if hasattr(item, "text")
-                )
-            return "Action completed (no output)"
+        client = await _connect_playwright()
+        result = await client.call_tool(tool_name, params)
+        # Extract text content from result
+        if result.content:
+            return "\n".join(
+                item.text for item in result.content
+                if hasattr(item, "text")
+            )
+        return "Action completed (no output)"
     except Exception as e:
         return f"Error: {e}"
 
@@ -210,49 +243,64 @@ async def browser_batch(
     results: list[str] = []
 
     try:
-        client = await get_playwright()
-        async with client:
-            for i, step in enumerate(steps):
-                action = step.get("action")
-                if not action:
-                    results.append(f"Step {i}: Missing 'action' key")
-                    break
+        client = await _connect_playwright()
 
-                tool_name = TOOL_MAP.get(action)
-                if not tool_name:
-                    results.append(f"Step {i}: Unknown action '{action}'")
-                    break
+        for i, step in enumerate(steps):
+            action = step.get("action")
+            if not action:
+                results.append(f"Step {i}: Missing 'action' key")
+                break
 
-                params = build_params(
-                    action=action,
-                    url=step.get("url"),
-                    ref=step.get("ref"),
-                    element=step.get("element"),
-                    text=step.get("text"),
-                    key=step.get("key"),
-                    script=step.get("script"),
-                    values=step.get("values"),
-                    timeout=step.get("timeout"),
-                )
-
+            # Handle close action specially
+            if action == "close":
                 try:
-                    result = await client.call_tool(tool_name, params)
-                    if result.content:
-                        text_content = "\n".join(
-                            item.text for item in result.content
-                            if hasattr(item, "text")
-                        )
-                        results.append(text_content or "Action completed")
-                    else:
-                        results.append("Action completed")
+                    await _disconnect_playwright()
+                    results.append("Browser closed and disconnected")
                 except Exception as e:
-                    results.append(f"Step {i} error: {e}")
-                    break  # Stop on error
+                    results.append(f"Step {i} error closing: {e}")
+                break  # Close ends the batch
+
+            tool_name = TOOL_MAP.get(action)
+            if not tool_name:
+                results.append(f"Step {i}: Unknown action '{action}'")
+                break
+
+            params = build_params(
+                action=action,
+                url=step.get("url"),
+                ref=step.get("ref"),
+                element=step.get("element"),
+                text=step.get("text"),
+                key=step.get("key"),
+                script=step.get("script"),
+                values=step.get("values"),
+                timeout=step.get("timeout"),
+            )
+
+            try:
+                result = await client.call_tool(tool_name, params)
+                if result.content:
+                    text_content = "\n".join(
+                        item.text for item in result.content
+                        if hasattr(item, "text")
+                    )
+                    results.append(text_content or "Action completed")
+                else:
+                    results.append("Action completed")
+            except Exception as e:
+                results.append(f"Step {i} error: {e}")
+                break  # Stop on error
 
     except Exception as e:
         results.append(f"Connection error: {e}")
 
     return results
+
+
+@mcp.on_shutdown
+async def cleanup():
+    """Cleanup handler - disconnect from Playwright on server shutdown."""
+    await _disconnect_playwright()
 
 
 def main():
