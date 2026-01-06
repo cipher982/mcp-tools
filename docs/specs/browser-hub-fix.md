@@ -142,19 +142,27 @@ browser(action="close")
 ```
 
 ### Phase 2: Content Type Handling
-**Status:** Not started
+**Status:** ✅ Complete (commit: 553bb3b)
 
 Handle ImageContent from screenshots.
 
 **Changes:**
-- Check content item type before extraction
-- For ImageContent: return `data:{mimeType};base64,{data}`
-- Add content type to output when mixed (text + image)
+- ✅ Check content item type before extraction
+- ✅ For ImageContent: return `data:{mimeType};base64,{data}`
+- ✅ Add content type to output when mixed (text + image)
 
 **Acceptance Criteria:**
-- [ ] `browser(action="screenshot")` returns base64 data URI
-- [ ] Text content still works as before
-- [ ] Mixed content (text + image) handled gracefully
+- [x] `browser(action="screenshot")` returns base64 data URI
+- [x] Text content still works as before
+- [x] Mixed content (text + image) handled gracefully
+
+**Implementation Details:**
+- Added `extract_content()` helper function that checks `type` attribute of content items
+- TextContent (type="text"): extracts `.text` attribute
+- ImageContent (type="image"): formats as `data:{mimeType};base64,{data}`
+- Mixed content: joins all parts with newlines
+- Both `browser()` and `browser_batch()` use the helper
+- Gracefully handles unknown content types (skips with no error)
 
 **Test:**
 ```bash
