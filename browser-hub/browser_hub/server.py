@@ -27,22 +27,23 @@ mcp = FastMCP(
 
 # Global state for persistent Playwright connection
 _playwright_client: Client | None = None
+_playwright_transport: StdioTransport | None = None  # Keep reference for cleanup
 _playwright_connected: bool = False
 _playwright_lock = asyncio.Lock()
 
 
 async def get_playwright() -> Client:
     """Get or create persistent Playwright MCP connection."""
-    global _playwright_client
+    global _playwright_client, _playwright_transport
 
     async with _playwright_lock:
         if _playwright_client is None:
             # Create transport with keep_alive=True (default) for session persistence
-            transport = StdioTransport(
+            _playwright_transport = StdioTransport(
                 command="npx",
                 args=["@playwright/mcp@latest"],
             )
-            _playwright_client = Client(transport)
+            _playwright_client = Client(_playwright_transport)
 
         return _playwright_client
 
@@ -64,7 +65,7 @@ async def _connect_playwright() -> Client:
 
 async def _disconnect_playwright():
     """Disconnect from Playwright and cleanup."""
-    global _playwright_client, _playwright_connected
+    global _playwright_client, _playwright_transport, _playwright_connected
 
     async with _playwright_lock:
         if _playwright_client is not None and _playwright_connected:
@@ -72,6 +73,7 @@ async def _disconnect_playwright():
             await _playwright_client.close()
             _playwright_connected = False
             _playwright_client = None
+            _playwright_transport = None
 
 
 # Map our simplified actions to Playwright MCP tool names
@@ -315,19 +317,36 @@ async def browser_batch(
 
 
 def _cleanup_sync():
-    """Sync cleanup handler for atexit - runs async disconnect."""
-    global _playwright_client, _playwright_connected
-    if _playwright_client is not None and _playwright_connected:
+    """
+    Best-effort sync cleanup handler for atexit.
+
+    Note: This may not work perfectly because FastMCP Client uses asyncio tasks
+    tied to the original event loop. The primary cleanup mechanism is:
+    1. User calls browser(action="close") explicitly
+    2. OS cleans up orphaned subprocesses on parent exit
+
+    This handler attempts cleanup but failures are acceptable.
+    """
+    global _playwright_client, _playwright_transport, _playwright_connected
+
+    if not _playwright_connected:
+        return
+
+    # Try to access and terminate any subprocess via transport internals
+    # This is fragile but better than nothing
+    if _playwright_transport is not None:
         try:
-            # Try to run async cleanup in a new event loop
-            # (the main loop may be closed by the time atexit runs)
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(_playwright_client.close())
-            loop.close()
+            # StdioTransport may have a _connect_task that holds the subprocess
+            # Try to cancel it (best effort)
+            if hasattr(_playwright_transport, '_connect_task') and _playwright_transport._connect_task:
+                _playwright_transport._connect_task.cancel()
         except Exception:
-            pass  # Best effort cleanup
-        _playwright_connected = False
-        _playwright_client = None
+            pass
+
+    # Mark as disconnected regardless of success
+    _playwright_connected = False
+    _playwright_client = None
+    _playwright_transport = None
 
 
 # Register cleanup handler
