@@ -1,0 +1,264 @@
+"""
+Browser Hub - A lightweight MCP facade for Playwright.
+
+Reduces ~20 Playwright tools (~13k tokens) to 2 tools (~300 tokens).
+Maintains persistent Playwright connection for stateful browser sessions.
+"""
+
+import asyncio
+from typing import Literal, Any
+from fastmcp import FastMCP, Client
+from fastmcp.client.transports import StdioTransport
+
+# Create the hub server
+mcp = FastMCP(
+    "browser-hub",
+    instructions="""
+    Browser automation hub. Use browser() for single actions, browser_batch() for multi-step flows.
+
+    Typical workflow:
+    1. browser(action="navigate", url="https://example.com")
+    2. browser(action="snapshot") -> returns element refs like E1, E2, E42
+    3. browser(action="click", ref="E5", element="Login button")
+    4. browser(action="type", ref="E6", text="user@example.com")
+    """
+)
+
+# Global state for persistent Playwright connection
+_playwright_client: Client | None = None
+_playwright_lock = asyncio.Lock()
+
+
+async def get_playwright() -> Client:
+    """Get or create persistent Playwright MCP connection."""
+    global _playwright_client
+
+    async with _playwright_lock:
+        if _playwright_client is None:
+            # Create transport with keep_alive=True (default) for session persistence
+            transport = StdioTransport(
+                command="npx",
+                args=["@playwright/mcp@latest"],
+            )
+            _playwright_client = Client(transport)
+
+        return _playwright_client
+
+
+# Map our simplified actions to Playwright MCP tool names
+TOOL_MAP = {
+    "navigate": "browser_navigate",
+    "snapshot": "browser_snapshot",
+    "click": "browser_click",
+    "type": "browser_type",
+    "press_key": "browser_press_key",
+    "screenshot": "browser_take_screenshot",
+    "wait_for": "browser_wait_for",
+    "evaluate": "browser_evaluate",
+    "select": "browser_select_option",
+    "close": "browser_close",
+}
+
+
+def build_params(
+    action: str,
+    url: str | None,
+    ref: str | None,
+    element: str | None,
+    text: str | None,
+    key: str | None,
+    script: str | None,
+    values: list[str] | None,
+    timeout: float | None,
+) -> dict[str, Any]:
+    """Build params dict for Playwright tool based on action."""
+    params: dict[str, Any] = {}
+
+    if action == "navigate":
+        if url:
+            params["url"] = url
+
+    elif action == "snapshot":
+        pass  # No params needed
+
+    elif action == "click":
+        if ref:
+            params["ref"] = ref
+        if element:
+            params["element"] = element
+
+    elif action == "type":
+        if ref:
+            params["ref"] = ref
+        if element:
+            params["element"] = element
+        if text:
+            params["text"] = text
+
+    elif action == "press_key":
+        if key:
+            params["key"] = key
+
+    elif action == "screenshot":
+        pass  # Uses defaults
+
+    elif action == "wait_for":
+        if text:
+            params["text"] = text
+        if timeout:
+            params["time"] = timeout
+
+    elif action == "evaluate":
+        if script:
+            params["function"] = script
+
+    elif action == "select":
+        if ref:
+            params["ref"] = ref
+        if element:
+            params["element"] = element
+        if values:
+            params["values"] = values
+
+    elif action == "close":
+        pass  # No params needed
+
+    return params
+
+
+@mcp.tool()
+async def browser(
+    action: Literal[
+        "navigate", "snapshot", "click", "type", "press_key",
+        "screenshot", "wait_for", "evaluate", "select", "close"
+    ],
+    url: str | None = None,
+    ref: str | None = None,
+    element: str | None = None,
+    text: str | None = None,
+    key: str | None = None,
+    script: str | None = None,
+    values: list[str] | None = None,
+    timeout: float | None = None,
+) -> str:
+    """
+    Browser automation with persistent session.
+
+    Actions:
+    - navigate: Go to URL (url required)
+    - snapshot: Get page structure with element refs (E1, E2, etc.)
+    - click: Click element (ref + element description required)
+    - type: Type text into element (ref + text required)
+    - press_key: Press keyboard key (key required, e.g. "Enter", "Tab")
+    - screenshot: Take screenshot of current page
+    - wait_for: Wait for text to appear (text) or time in seconds (timeout)
+    - evaluate: Run JavaScript (script required)
+    - select: Select dropdown option (ref + values required)
+    - close: Close browser
+
+    Example workflow:
+        browser(action="navigate", url="https://example.com")
+        browser(action="snapshot")  # Returns refs like E1, E42
+        browser(action="click", ref="E5", element="Login button")
+        browser(action="type", ref="E6", text="user@example.com")
+    """
+    tool_name = TOOL_MAP.get(action)
+    if not tool_name:
+        return f"Unknown action: {action}. Valid actions: {list(TOOL_MAP.keys())}"
+
+    params = build_params(action, url, ref, element, text, key, script, values, timeout)
+
+    try:
+        client = await get_playwright()
+        async with client:
+            result = await client.call_tool(tool_name, params)
+            # Extract text content from result
+            if result.content:
+                return "\n".join(
+                    item.text for item in result.content
+                    if hasattr(item, "text")
+                )
+            return "Action completed (no output)"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+async def browser_batch(
+    steps: list[dict],
+) -> list[str]:
+    """
+    Execute multiple browser actions in sequence. Efficient for multi-step flows.
+
+    Each step is a dict with 'action' and relevant params.
+    Stops on first error and returns results up to that point.
+
+    Example:
+        browser_batch(steps=[
+            {"action": "navigate", "url": "https://example.com"},
+            {"action": "snapshot"},
+            {"action": "click", "ref": "E5", "element": "Login"},
+            {"action": "type", "ref": "E6", "text": "user@example.com"},
+            {"action": "type", "ref": "E7", "text": "password123"},
+            {"action": "click", "ref": "E8", "element": "Submit"},
+            {"action": "wait_for", "text": "Welcome"},
+            {"action": "snapshot"}
+        ])
+
+    Returns list of results, one per step.
+    """
+    results: list[str] = []
+
+    try:
+        client = await get_playwright()
+        async with client:
+            for i, step in enumerate(steps):
+                action = step.get("action")
+                if not action:
+                    results.append(f"Step {i}: Missing 'action' key")
+                    break
+
+                tool_name = TOOL_MAP.get(action)
+                if not tool_name:
+                    results.append(f"Step {i}: Unknown action '{action}'")
+                    break
+
+                params = build_params(
+                    action=action,
+                    url=step.get("url"),
+                    ref=step.get("ref"),
+                    element=step.get("element"),
+                    text=step.get("text"),
+                    key=step.get("key"),
+                    script=step.get("script"),
+                    values=step.get("values"),
+                    timeout=step.get("timeout"),
+                )
+
+                try:
+                    result = await client.call_tool(tool_name, params)
+                    if result.content:
+                        text_content = "\n".join(
+                            item.text for item in result.content
+                            if hasattr(item, "text")
+                        )
+                        results.append(text_content or "Action completed")
+                    else:
+                        results.append("Action completed")
+                except Exception as e:
+                    results.append(f"Step {i} error: {e}")
+                    break  # Stop on error
+
+    except Exception as e:
+        results.append(f"Connection error: {e}")
+
+    return results
+
+
+def main():
+    """Entry point for the browser-hub server."""
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()
