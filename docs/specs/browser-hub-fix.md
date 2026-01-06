@@ -109,21 +109,29 @@ Combined output string
 ## Implementation Phases
 
 ### Phase 1: True Persistence
-**Status:** Not started
+**Status:** ✅ Complete (commit: 63991a9)
 
 Refactor connection management to connect once, stay connected.
 
 **Changes:**
-- Add `_connect_playwright()` that calls `client.connect()` once
-- Remove `async with client:` from `browser()` and `browser_batch()`
-- Add disconnection on `close` action
-- Add `@mcp.on_shutdown` handler to cleanup
+- ✅ Add `_connect_playwright()` that calls `client.connect()` once
+- ✅ Remove `async with client:` from `browser()` and `browser_batch()`
+- ✅ Add disconnection on `close` action
+- ✅ Add `@mcp.on_shutdown` handler to cleanup
 
 **Acceptance Criteria:**
-- [ ] `browser(); browser(); browser()` reuses same Playwright process
-- [ ] Browser state persists between calls (navigate → snapshot works)
-- [ ] `browser(action="close")` properly disconnects
-- [ ] No zombie Playwright processes after server shutdown
+- [x] `browser(); browser(); browser()` reuses same Playwright process
+- [x] Browser state persists between calls (navigate → snapshot works)
+- [x] `browser(action="close")` properly disconnects
+- [x] No zombie Playwright processes after server shutdown
+
+**Implementation Details:**
+- Added `_playwright_connected` flag to track connection state
+- `_connect_playwright()` checks flag and only connects once
+- `_disconnect_playwright()` properly cleans up client and resets flags
+- Both `browser()` and `browser_batch()` use `_connect_playwright()` instead of context manager
+- Close action handled specially to trigger disconnection
+- Shutdown handler ensures cleanup on server exit
 
 **Test:**
 ```bash
