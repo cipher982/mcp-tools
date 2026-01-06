@@ -6,6 +6,7 @@ Maintains persistent Playwright connection for stateful browser sessions.
 """
 
 import asyncio
+import atexit
 from typing import Literal, Any
 from fastmcp import FastMCP, Client
 from fastmcp.client.transports import StdioTransport
@@ -313,10 +314,24 @@ async def browser_batch(
     return results
 
 
-@mcp.on_shutdown
-async def cleanup():
-    """Cleanup handler - disconnect from Playwright on server shutdown."""
-    await _disconnect_playwright()
+def _cleanup_sync():
+    """Sync cleanup handler for atexit - runs async disconnect."""
+    global _playwright_client, _playwright_connected
+    if _playwright_client is not None and _playwright_connected:
+        try:
+            # Try to run async cleanup in a new event loop
+            # (the main loop may be closed by the time atexit runs)
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_playwright_client.close())
+            loop.close()
+        except Exception:
+            pass  # Best effort cleanup
+        _playwright_connected = False
+        _playwright_client = None
+
+
+# Register cleanup handler
+atexit.register(_cleanup_sync)
 
 
 def main():
