@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 280">
+  <defs>
+    <linearGradient id="redGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff6b6b"/>
+      <stop offset="100%" style="stop-color:#ee5a5a"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#51cf66"/>
+      <stop offset="100%" style="stop-color:#40c057"/>
+    </linearGradient>
+    <linearGradient id="bgGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e1e2e"/>
+      <stop offset="100%" style="stop-color:#181825"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="600" height="280" fill="url(#bgGrad2)" rx="12"/>
+
+  <!-- Title -->
+  <text x="300" y="35" font-family="system-ui, sans-serif" font-size="18" fill="#cdd6f4" text-anchor="middle" font-weight="600">Token Usage Comparison</text>
+
+  <!-- Browser Hub Section -->
+  <text x="50" y="75" font-family="system-ui, sans-serif" font-size="14" fill="#89b4fa" font-weight="600">Browser Hub</text>
+
+  <!-- Before bar -->
+  <text x="50" y="100" font-family="system-ui, sans-serif" font-size="11" fill="#6c7086">Playwright MCP</text>
+  <rect x="150" y="88" width="380" height="20" rx="4" fill="#313244"/>
+  <rect x="150" y="88" width="380" height="20" rx="4" fill="url(#redGrad)"/>
+  <text x="540" y="102" font-family="monospace" font-size="11" fill="#1e1e2e" text-anchor="end" font-weight="600">~13,000 tokens</text>
+
+  <!-- After bar -->
+  <text x="50" y="130" font-family="system-ui, sans-serif" font-size="11" fill="#6c7086">Browser Hub</text>
+  <rect x="150" y="118" width="380" height="20" rx="4" fill="#313244"/>
+  <rect x="150" y="118" width="11" height="20" rx="4" fill="url(#greenGrad)"/>
+  <text x="170" y="132" font-family="monospace" font-size="11" fill="#a6e3a1" font-weight="600">~300 tokens</text>
+
+  <!-- Savings badge -->
+  <rect x="450" y="115" width="80" height="24" rx="12" fill="#40c057" opacity="0.2"/>
+  <text x="490" y="132" font-family="system-ui, sans-serif" font-size="11" fill="#40c057" text-anchor="middle" font-weight="700">-97%</text>
+
+  <!-- Search Hub Section -->
+  <text x="50" y="175" font-family="system-ui, sans-serif" font-size="14" fill="#89b4fa" font-weight="600">Search Hub</text>
+
+  <!-- Before bar -->
+  <text x="50" y="200" font-family="system-ui, sans-serif" font-size="11" fill="#6c7086">OpenAI Web Search</text>
+  <rect x="150" y="188" width="380" height="20" rx="4" fill="#313244"/>
+  <rect x="150" y="188" width="152" height="20" rx="4" fill="url(#redGrad)"/>
+  <text x="310" y="202" font-family="monospace" font-size="11" fill="#1e1e2e" font-weight="600">~5,200 tokens</text>
+
+  <!-- After bar -->
+  <text x="50" y="230" font-family="system-ui, sans-serif" font-size="11" fill="#6c7086">Search Hub</text>
+  <rect x="150" y="218" width="380" height="20" rx="4" fill="#313244"/>
+  <rect x="150" y="218" width="22" height="20" rx="4" fill="url(#greenGrad)"/>
+  <text x="180" y="232" font-family="monospace" font-size="11" fill="#a6e3a1" font-weight="600">~300 tokens</text>
+
+  <!-- Savings badge -->
+  <rect x="450" y="215" width="80" height="24" rx="12" fill="#40c057" opacity="0.2"/>
+  <text x="490" y="232" font-family="system-ui, sans-serif" font-size="11" fill="#40c057" text-anchor="middle" font-weight="700">-94%</text>
+
+  <!-- Total savings -->
+  <rect x="150" y="252" width="380" height="1" fill="#313244"/>
+  <text x="300" y="272" font-family="system-ui, sans-serif" font-size="12" fill="#cdd6f4" text-anchor="middle">Combined: <tspan fill="#a6e3a1" font-weight="700">~17,600 tokens saved</tspan> per session</text>
+</svg>
