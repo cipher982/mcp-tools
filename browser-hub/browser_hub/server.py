@@ -41,7 +41,7 @@ async def get_playwright() -> Client:
             # Create transport with keep_alive=True (default) for session persistence
             _playwright_transport = StdioTransport(
                 command="npx",
-                args=["@playwright/mcp@0.0.54"],
+                args=["-y", "@playwright/mcp@0.0.54"],
             )
             _playwright_client = Client(_playwright_transport)
 

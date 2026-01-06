@@ -51,3 +51,6 @@ htmlcov/
 
 # CLAUDE.md symlinks (local-only, never commit)
 CLAUDE.md
+
+# IDE
+.cursor/
