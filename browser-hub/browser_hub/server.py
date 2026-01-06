@@ -23,7 +23,7 @@ mcp = FastMCP(
     1. browser(action="navigate", url="https://example.com")
     2. browser(action="snapshot") -> returns element refs like E1, E2, E42
     3. browser(action="click", ref="E5", element="Login button")
-    4. browser(action="type", ref="E6", text="user@example.com")
+    4. browser(action="type", ref="E6", element="Email field", text="user@example.com")
     """
 )
 
@@ -86,6 +86,7 @@ TOOL_MAP = {
     "type": "browser_type",
     "press_key": "browser_press_key",
     "screenshot": "browser_take_screenshot",
+    "screenshot_file": "browser_take_screenshot",  # Same tool, different output handling
     "wait_for": "browser_wait_for",
     "evaluate": "browser_evaluate",
     "select": "browser_select_option",
@@ -132,7 +133,7 @@ def build_params(
         if key:
             params["key"] = key
 
-    elif action == "screenshot":
+    elif action in ("screenshot", "screenshot_file"):
         pass  # Uses defaults
 
     elif action == "wait_for":
@@ -212,7 +213,7 @@ def extract_text_only(result) -> str:
 async def browser(
     action: Literal[
         "navigate", "snapshot", "click", "type", "press_key",
-        "screenshot", "wait_for", "evaluate", "select", "close"
+        "screenshot", "screenshot_file", "wait_for", "evaluate", "select", "close"
     ],
     url: str | None = None,
     ref: str | None = None,
@@ -230,9 +231,10 @@ async def browser(
     - navigate: Go to URL (url required)
     - snapshot: Get page structure with element refs (E1, E2, etc.)
     - click: Click element (ref + element description required)
-    - type: Type text into element (ref + text required)
+    - type: Type text into element (ref + element + text required)
     - press_key: Press keyboard key (key required, e.g. "Enter", "Tab")
-    - screenshot: Take screenshot of current page
+    - screenshot: Take screenshot of current page (returns inline image)
+    - screenshot_file: Take screenshot and return file path only (no base64)
     - wait_for: Wait for text to appear (text) or time in seconds (timeout)
     - evaluate: Run JavaScript (script required)
     - select: Select dropdown option (ref + values required)
@@ -242,7 +244,7 @@ async def browser(
         browser(action="navigate", url="https://example.com")
         browser(action="snapshot")  # Returns refs like E1, E42
         browser(action="click", ref="E5", element="Login button")
-        browser(action="type", ref="E6", text="user@example.com")
+        browser(action="type", ref="E6", element="Email field", text="user@example.com")
     """
     tool_name = TOOL_MAP.get(action)
     if not tool_name:
@@ -268,6 +270,12 @@ async def browser(
     try:
         client = await _connect_playwright()
         result = await client.call_tool(tool_name, params)
+
+        # screenshot_file: return only text (file path), omit image data
+        if action == "screenshot_file":
+            text_output = extract_text_only(result)
+            return [mcp_types.TextContent(type="text", text=text_output)]
+
         # Preserve content blocks (text + image, etc.)
         return extract_content(result)
     except Exception as e:

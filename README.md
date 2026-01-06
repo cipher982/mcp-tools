@@ -75,16 +75,17 @@ Add to `~/.claude.json`:
 # Navigate and interact
 browser(action="navigate", url="https://example.com")
 browser(action="snapshot")  # Returns element refs: E1, E2, E42...
-browser(action="click", ref="E5", element="Login button")
-browser(action="type", ref="E6", text="user@example.com")
+browser(action="click", ref="E5", element="Login button")  # ref + element required
+browser(action="type", ref="E6", element="Email", text="user@example.com")  # ref + element + text
 
-# Batch operations for efficiency
+# Batch operations for efficiency (note: omits images to keep responses small)
 browser_batch(steps=[
     {"action": "navigate", "url": "https://example.com"},
     {"action": "snapshot"},
     {"action": "click", "ref": "E5", "element": "Submit"},
     {"action": "wait_for", "text": "Success"}
 ])
+# Use browser(action="screenshot") separately if you need the actual image
 ```
 
 ### Web Research
