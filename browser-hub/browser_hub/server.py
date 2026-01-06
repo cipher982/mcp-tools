@@ -54,7 +54,8 @@ async def _connect_playwright() -> Client:
 
     async with _playwright_lock:
         if not _playwright_connected:
-            await client.connect()
+            # Use __aenter__ to establish connection (initializes MCP session)
+            await client.__aenter__()
             _playwright_connected = True
 
     return client
@@ -66,7 +67,8 @@ async def _disconnect_playwright():
 
     async with _playwright_lock:
         if _playwright_client is not None and _playwright_connected:
-            await _playwright_client.disconnect()
+            # close() force-disconnects and closes transport/subprocess
+            await _playwright_client.close()
             _playwright_connected = False
             _playwright_client = None
 
@@ -192,9 +194,16 @@ async def browser(
     if not tool_name:
         return f"Unknown action: {action}. Valid actions: {list(TOOL_MAP.keys())}"
 
-    # Handle close action specially - disconnect
+    # Handle close action specially - close browser then disconnect
     if action == "close":
         try:
+            # First call browser_close to properly close the browser in Playwright
+            if _playwright_connected and _playwright_client is not None:
+                try:
+                    await _playwright_client.call_tool("browser_close", {})
+                except Exception:
+                    pass  # Browser may already be closed, continue with disconnect
+            # Then disconnect the MCP session
             await _disconnect_playwright()
             return "Browser closed and disconnected"
         except Exception as e:
@@ -251,9 +260,16 @@ async def browser_batch(
                 results.append(f"Step {i}: Missing 'action' key")
                 break
 
-            # Handle close action specially
+            # Handle close action specially - close browser then disconnect
             if action == "close":
                 try:
+                    # First call browser_close to properly close the browser in Playwright
+                    if _playwright_connected and _playwright_client is not None:
+                        try:
+                            await client.call_tool("browser_close", {})
+                        except Exception:
+                            pass  # Browser may already be closed, continue with disconnect
+                    # Then disconnect the MCP session
                     await _disconnect_playwright()
                     results.append("Browser closed and disconnected")
                 except Exception as e:
