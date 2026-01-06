@@ -171,34 +171,34 @@ browser(action="screenshot")  # Should return data:image/png;base64,...
 ```
 
 ### Phase 3: Integration Tests
-**Status:** Not started
+**Status:** ✅ Complete (commit: e7ce6ad)
 
 Add pytest tests that verify persistence and content handling.
 
 **Deliverables:**
-- `browser-hub/tests/test_persistence.py`
-- `browser-hub/tests/test_content.py`
-- CI-friendly test commands in README
+- ✅ `browser-hub/tests/test_persistence.py` (10 tests)
+- ✅ `browser-hub/tests/test_content.py` (10 tests)
+- ✅ `browser-hub/pyproject.toml` updated with pytest dev dependency
 
 **Acceptance Criteria:**
-- [ ] Test verifies connection reuse (mock or real)
-- [ ] Test verifies screenshot returns image data
-- [ ] Tests can run in CI (with appropriate mocking)
+- [x] Test verifies connection reuse (mock-based)
+- [x] Test verifies screenshot returns image data
+- [x] Tests can run in CI: `cd browser-hub && uv run pytest`
 
 ### Phase 4: Cleanup
-**Status:** Not started
+**Status:** ✅ Complete (commit: dcc681a)
 
 Fix repo hygiene issues.
 
 **Changes:**
-- Remove CLAUDE.md from git tracking (keep local symlink)
-- Update or remove stale `docs/specs/search-hub.md`
-- Pin `@playwright/mcp` version
+- ✅ Remove CLAUDE.md from git tracking (keep local symlink)
+- ✅ Update `docs/specs/search-hub.md` with correct paths/model/fields
+- ✅ Pin `@playwright/mcp@0.0.54` version
 
 **Acceptance Criteria:**
-- [ ] `git ls-files CLAUDE.md` returns nothing
-- [ ] search-hub.md either updated or removed
-- [ ] Playwright MCP version pinned in code
+- [x] `git ls-files CLAUDE.md` returns nothing
+- [x] search-hub.md updated with correct paths/model/fields
+- [x] Playwright MCP version pinned to 0.0.54
 
 ## Files to Modify
 
