@@ -99,9 +99,12 @@ def ensure_output_dir() -> Path:
     return OUTPUT_DIR
 
 
-def save_image(image_bytes: bytes, prefix: str = "img") -> str:
+def save_image(image_bytes: bytes, prefix: str = "img", project: str | None = None) -> str:
     """Save image bytes to file, return absolute path."""
     output_dir = ensure_output_dir()
+    if project:
+        output_dir = output_dir / project
+        output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     short_id = uuid.uuid4().hex[:6]
     filename = f"{prefix}_{timestamp}_{short_id}.png"
@@ -154,6 +157,7 @@ def generate_single_image(
 def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
+    project: str | None = None,
 ) -> dict:
     """
     Generate an image from a text prompt using Gemini 3 Pro.
@@ -161,6 +165,7 @@ def generate_image(
     Args:
         prompt: Text description of the image to generate
         aspect_ratio: Image dimensions - "1:1", "16:9", "9:16", "4:3", "3:4", etc.
+        project: Optional project name for organizing output (creates subdirectory)
 
     Returns:
         Dict with "path" (absolute file path to PNG) and metadata
@@ -171,7 +176,7 @@ def generate_image(
         if image_bytes is None:
             return {"error": "Failed to generate image", "path": None}
 
-        filepath = save_image(image_bytes, prefix="gen")
+        filepath = save_image(image_bytes, prefix="gen", project=project)
         return {
             "path": filepath,
             "aspect_ratio": aspect_ratio,
@@ -186,6 +191,7 @@ def generate_variants(
     prompt: str,
     num_variants: int = 2,
     aspect_ratio: str = "1:1",
+    project: str | None = None,
 ) -> dict:
     """
     Generate multiple image variants in parallel (O(1) time).
@@ -194,6 +200,7 @@ def generate_variants(
         prompt: Text description for all variants
         num_variants: Number of variants to generate (1-4)
         aspect_ratio: Image dimensions
+        project: Optional project name for organizing output (creates subdirectory)
 
     Returns:
         Dict with "paths" (list of file paths) and metadata
@@ -213,7 +220,7 @@ def generate_variants(
         paths = []
         for i, img_bytes in enumerate(results):
             if img_bytes is not None:
-                filepath = save_image(img_bytes, prefix=f"var{i+1}")
+                filepath = save_image(img_bytes, prefix=f"var{i+1}", project=project)
                 paths.append(filepath)
 
         return {
@@ -232,6 +239,7 @@ def edit_image(
     prompt: str,
     image_path: str,
     aspect_ratio: str | None = None,
+    project: str | None = None,
 ) -> dict:
     """
     Edit an existing image based on a text prompt.
@@ -240,6 +248,7 @@ def edit_image(
         prompt: Instructions for how to modify the image
         image_path: Path to source image file (PNG/JPEG)
         aspect_ratio: Optional new aspect ratio (keeps original if not specified)
+        project: Optional project name for organizing output (creates subdirectory)
 
     Returns:
         Dict with "path" (file path to result) and metadata
@@ -292,7 +301,7 @@ def edit_image(
             if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
                 for part in candidate.content.parts:
                     if hasattr(part, "inline_data") and part.inline_data:
-                        filepath = save_image(part.inline_data.data, prefix="edit")
+                        filepath = save_image(part.inline_data.data, prefix="edit", project=project)
                         return {
                             "path": filepath,
                             "aspect_ratio": aspect_ratio,
