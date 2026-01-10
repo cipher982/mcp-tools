@@ -2,12 +2,16 @@
 Image Hub - Lightweight MCP facade for Gemini image generation.
 
 Wraps google-genai Vertex AI for image generation with minimal token overhead.
+Images are saved to files and paths returned for easy use in agent workflows.
 """
 
 import base64
 import io
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from fastmcp import FastMCP
@@ -20,10 +24,11 @@ mcp = FastMCP(
     Image generation using Gemini 3 Pro via Vertex AI.
 
     Tools:
-    - generate_image: Create images from text prompts
-    - generate_variants: Create multiple image variants in parallel
-    - edit_image: Modify an existing image with a prompt
+    - generate_image: Create image from prompt, returns file path
+    - generate_variants: Create multiple variants in parallel, returns file paths
+    - edit_image: Modify existing image file with prompt, returns file path
 
+    Images saved to ~/Pictures/image-hub/ by default.
     Requires GOOGLE_APPLICATION_CREDENTIALS for Vertex AI auth.
     """
 )
@@ -32,6 +37,7 @@ mcp = FastMCP(
 PROJECT_ID = "zeta-phoenix"
 LOCATION = "us-central1"
 DEFAULT_MODEL = "gemini-3-pro-image-preview"
+OUTPUT_DIR = Path.home() / "Pictures" / "image-hub"
 
 # Valid aspect ratios
 ASPECT_RATIOS = Literal[
@@ -87,6 +93,23 @@ def get_safety_settings():
     ]
 
 
+def ensure_output_dir() -> Path:
+    """Ensure output directory exists and return it."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    return OUTPUT_DIR
+
+
+def save_image(image_bytes: bytes, prefix: str = "img") -> str:
+    """Save image bytes to file, return absolute path."""
+    output_dir = ensure_output_dir()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_id = uuid.uuid4().hex[:6]
+    filename = f"{prefix}_{timestamp}_{short_id}.png"
+    filepath = output_dir / filename
+    filepath.write_bytes(image_bytes)
+    return str(filepath)
+
+
 def generate_single_image(
     prompt: str,
     aspect_ratio: str = "1:1",
@@ -127,17 +150,6 @@ def generate_single_image(
     return None
 
 
-def image_to_base64(image_bytes: bytes) -> str:
-    """Convert image bytes to base64 string."""
-    return base64.b64encode(image_bytes).decode("utf-8")
-
-
-def base64_to_image(b64_string: str) -> Image.Image:
-    """Convert base64 string to PIL Image."""
-    image_bytes = base64.b64decode(b64_string)
-    return Image.open(io.BytesIO(image_bytes))
-
-
 @mcp.tool()
 def generate_image(
     prompt: str,
@@ -151,21 +163,22 @@ def generate_image(
         aspect_ratio: Image dimensions - "1:1", "16:9", "9:16", "4:3", "3:4", etc.
 
     Returns:
-        Dict with "image" (base64 PNG) and "aspect_ratio"
+        Dict with "path" (absolute file path to PNG) and metadata
     """
     try:
         image_bytes = generate_single_image(prompt, aspect_ratio)
 
         if image_bytes is None:
-            return {"error": "Failed to generate image", "image": None}
+            return {"error": "Failed to generate image", "path": None}
 
+        filepath = save_image(image_bytes, prefix="gen")
         return {
-            "image": image_to_base64(image_bytes),
+            "path": filepath,
             "aspect_ratio": aspect_ratio,
             "format": "png",
         }
     except Exception as e:
-        return {"error": str(e), "image": None}
+        return {"error": str(e), "path": None}
 
 
 @mcp.tool()
@@ -178,12 +191,12 @@ def generate_variants(
     Generate multiple image variants in parallel (O(1) time).
 
     Args:
-        prompt: Text description (same prompt for all variants, or unique per variant)
+        prompt: Text description for all variants
         num_variants: Number of variants to generate (1-4)
         aspect_ratio: Image dimensions
 
     Returns:
-        Dict with "images" (list of base64 PNGs) and metadata
+        Dict with "paths" (list of file paths) and metadata
     """
     num_variants = min(max(1, num_variants), 4)  # Clamp to 1-4
 
@@ -196,26 +209,28 @@ def generate_variants(
             ]
             results = [f.result() for f in futures]
 
-        # Convert successful results to base64
-        images = [
-            image_to_base64(img) for img in results if img is not None
-        ]
+        # Save successful results to files
+        paths = []
+        for i, img_bytes in enumerate(results):
+            if img_bytes is not None:
+                filepath = save_image(img_bytes, prefix=f"var{i+1}")
+                paths.append(filepath)
 
         return {
-            "images": images,
-            "count": len(images),
+            "paths": paths,
+            "count": len(paths),
             "requested": num_variants,
             "aspect_ratio": aspect_ratio,
             "format": "png",
         }
     except Exception as e:
-        return {"error": str(e), "images": [], "count": 0}
+        return {"error": str(e), "paths": [], "count": 0}
 
 
 @mcp.tool()
 def edit_image(
     prompt: str,
-    image_base64: str,
+    image_path: str,
     aspect_ratio: str | None = None,
 ) -> dict:
     """
@@ -223,19 +238,23 @@ def edit_image(
 
     Args:
         prompt: Instructions for how to modify the image
-        image_base64: Base64-encoded source image (PNG/JPEG)
+        image_path: Path to source image file (PNG/JPEG)
         aspect_ratio: Optional new aspect ratio (keeps original if not specified)
 
     Returns:
-        Dict with "image" (base64 PNG) and metadata
+        Dict with "path" (file path to result) and metadata
     """
     from google.genai import types
 
     try:
         client = get_client()
 
-        # Decode input image
-        image_bytes = base64.b64decode(image_base64)
+        # Read input image
+        image_path = Path(image_path).expanduser()
+        if not image_path.exists():
+            return {"error": f"Image not found: {image_path}", "path": None}
+
+        image_bytes = image_path.read_bytes()
 
         # Determine aspect ratio from input if not specified
         if aspect_ratio is None:
@@ -250,8 +269,13 @@ def edit_image(
             else:
                 aspect_ratio = "1:1"
 
+        # Detect mime type
+        mime_type = "image/png"
+        if image_path.suffix.lower() in (".jpg", ".jpeg"):
+            mime_type = "image/jpeg"
+
         # Build multimodal content
-        image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
         response = client.models.generate_content(
             model=DEFAULT_MODEL,
@@ -268,16 +292,17 @@ def edit_image(
             if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
                 for part in candidate.content.parts:
                     if hasattr(part, "inline_data") and part.inline_data:
+                        filepath = save_image(part.inline_data.data, prefix="edit")
                         return {
-                            "image": image_to_base64(part.inline_data.data),
+                            "path": filepath,
                             "aspect_ratio": aspect_ratio,
                             "format": "png",
                         }
 
-        return {"error": "No image in response", "image": None}
+        return {"error": "No image in response", "path": None}
 
     except Exception as e:
-        return {"error": str(e), "image": None}
+        return {"error": str(e), "path": None}
 
 
 def main():
