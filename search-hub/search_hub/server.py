@@ -8,7 +8,7 @@ import json
 import os
 from typing import Literal
 from fastmcp import FastMCP
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 # Create the hub server
 mcp = FastMCP(
@@ -20,18 +20,18 @@ mcp = FastMCP(
     """
 )
 
-# Initialize OpenAI client
+# Initialize OpenAI async client
 _openai_client = None
 
 
-def get_openai_client() -> OpenAI:
-    """Get or create OpenAI client."""
+def get_openai_client() -> AsyncOpenAI:
+    """Get or create async OpenAI client."""
     global _openai_client
     if _openai_client is None:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
-        _openai_client = OpenAI(api_key=api_key)
+        _openai_client = AsyncOpenAI(api_key=api_key)
     return _openai_client
 
 
@@ -57,7 +57,7 @@ def extract_sources(response) -> list[dict[str, str]]:
 
 
 @mcp.tool()
-def web_research(
+async def web_research(
     task: str,
     reasoning_effort: Literal["low", "medium", "high"] = "medium",
 ) -> str:
@@ -74,7 +74,7 @@ def web_research(
 
     try:
         # Call OpenAI Responses API with web search + reasoning
-        response = client.responses.create(
+        response = await client.responses.create(
             model="gpt-5.2",
             input=task,
             tools=[{"type": "web_search_preview"}],
