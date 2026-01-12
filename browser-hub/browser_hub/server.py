@@ -43,7 +43,7 @@ async def get_playwright() -> Client:
             # Create transport with keep_alive=True (default) for session persistence
             _playwright_transport = StdioTransport(
                 command="npx",
-                args=["-y", "@playwright/mcp@0.0.54"],
+                args=["-y", "@playwright/mcp@0.0.54", "--snapshot-mode=none"],
             )
             _playwright_client = Client(_playwright_transport)
 
@@ -82,6 +82,7 @@ async def _disconnect_playwright():
 TOOL_MAP = {
     "navigate": "browser_navigate",
     "snapshot": "browser_snapshot",
+    "snapshot_file": "browser_snapshot",  # Same tool, uses filename param to save to disk
     "click": "browser_click",
     "type": "browser_type",
     "press_key": "browser_press_key",
@@ -114,6 +115,10 @@ def build_params(
 
     elif action == "snapshot":
         pass  # No params needed
+
+    elif action == "snapshot_file":
+        if text:  # Reuse 'text' param for filename
+            params["filename"] = text
 
     elif action == "click":
         if ref:
@@ -212,7 +217,7 @@ def extract_text_only(result) -> str:
 @mcp.tool()
 async def browser(
     action: Literal[
-        "navigate", "snapshot", "click", "type", "press_key",
+        "navigate", "snapshot", "snapshot_file", "click", "type", "press_key",
         "screenshot", "screenshot_file", "wait_for", "evaluate", "select", "close"
     ],
     url: str | None = None,
@@ -230,6 +235,7 @@ async def browser(
     Actions:
     - navigate: Go to URL (url required)
     - snapshot: Get page structure with element refs (E1, E2, etc.)
+    - snapshot_file: Save snapshot to file (text=filename), returns path only
     - click: Click element (ref + element description required)
     - type: Type text into element (ref + element + text required)
     - press_key: Press keyboard key (key required, e.g. "Enter", "Tab")
@@ -239,6 +245,9 @@ async def browser(
     - evaluate: Run JavaScript (script required)
     - select: Select dropdown option (ref + values required)
     - close: Close browser
+
+    Note: Actions like click/type return minimal output. Call snapshot explicitly
+    when you need fresh element refs.
 
     Example workflow:
         browser(action="navigate", url="https://example.com")
@@ -271,8 +280,8 @@ async def browser(
         client = await _connect_playwright()
         result = await client.call_tool(tool_name, params)
 
-        # screenshot_file: return only text (file path), omit image data
-        if action == "screenshot_file":
+        # screenshot_file / snapshot_file: return only text (file path), omit binary data
+        if action in ("screenshot_file", "snapshot_file"):
             text_output = extract_text_only(result)
             return [mcp_types.TextContent(type="text", text=text_output)]
 
