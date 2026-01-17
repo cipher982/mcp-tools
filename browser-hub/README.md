@@ -1,140 +1,74 @@
 # Browser Hub
 
-Lightweight MCP facade for Playwright automation.
+MCP server for browser automation with semantic element refs (@e1, @e2).
 
-## Problem
+Uses [agent-browser](https://github.com/vercel-labs/agent-browser) CLI under the hood.
 
-The Playwright MCP plugin exposes 20+ tools, consuming ~13k tokens of context in every Claude Code session - even when you don't use browser automation.
+## Prerequisites
 
-## Solution
+```bash
+npm install -g agent-browser
+agent-browser install
+```
 
-Browser Hub exposes **2 tools** (~300 tokens) that internally route to Playwright MCP:
+## Features
 
-- `browser(action, ...)` - Single browser action
-- `browser_batch(steps)` - Multiple actions in sequence
+- **Smart snapshot filtering** - Returns only interactive elements (~500 tokens vs ~12k raw)
+- **Batch form filling** - Fill multiple fields in ONE call via `fill_form` (works with React/Vue)
+- **Combined look action** - Screenshot + filtered snapshot in one round trip
+- Semantic element refs from accessibility tree
+- Auto-isolated sessions per MCP instance
+- Auth state save/load for sharing login across terminals
 
 ## Token Savings
 
-| Setup | MCP Tool Tokens |
-|-------|-----------------|
-| Playwright Plugin | ~13,000 |
-| Browser Hub | ~300 |
-| **Savings** | **~12,700 (97%)** |
-
-## Installation
-
-```bash
-cd browser-hub
-uv sync
-```
-
-## Configuration
-
-1. **Disable Playwright plugin** in `~/.claude/settings.json`:
-
-```json
-{
-  "enabledPlugins": {
-    "playwright@claude-plugins-official": false
-  }
-}
-```
-
-2. **Add browser-hub** to `~/.claude.json` mcpServers:
-
-```json
-{
-  "mcpServers": {
-    "browser-hub": {
-      "type": "stdio",
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/mcp-tools/browser-hub", "browser-hub"]
-    }
-  }
-}
-```
+| Before | After |
+|--------|-------|
+| ~12k tokens per snapshot | ~500-1k tokens (filtered) |
+| 10+ round trips to fill 5 fields | 1 round trip (fill_form) |
+| 2 calls to see page (screenshot + snapshot) | 1 call (look) |
 
 ## Usage
 
-### Single Action
+```bash
+uv run browser-hub
+```
+
+## Actions
+
+| Action | Required Params | Description |
+|--------|-----------------|-------------|
+| navigate | url | Go to URL |
+| **look** | - | Screenshot + filtered snapshot in ONE call |
+| snapshot | mode (optional) | Get elements (mode: "interactive" or "full") |
+| click | ref | Click element (e.g., "@e1") |
+| type | ref, text | Type into element |
+| **fill_form** | fields | Fill multiple fields: `{"#email": "x@y.com", "#name": "John"}` |
+| **get_value** | selector | Get current value of element (CSS selector like "#email") |
+| press_key | key | Press keyboard key |
+| screenshot | - | Take screenshot, returns path |
+| wait | ref OR timeout_ms | Wait for element or time |
+| evaluate | script | Run JavaScript |
+| select | ref, values | Select dropdown option |
+| state_save | path (optional) | Save auth state |
+| state_load | path (optional) | Load auth state |
+| close | - | Close browser |
+
+## Example: Fast Form Filling
 
 ```python
-# Navigate
-browser(action="navigate", url="https://example.com")
-
-# Get page structure (returns element refs like E1, E42)
+# Old way: 10+ round trips
+browser(action="type", ref="@e1", text="john@example.com")
 browser(action="snapshot")
+browser(action="type", ref="@e2", text="John")
+browser(action="snapshot")
+# ... repeat for each field
 
-# Click element (ref + element required)
-browser(action="click", ref="E5", element="Login button")
-
-# Type into field (ref + element + text required)
-browser(action="type", ref="E6", element="Email field", text="user@example.com")
-
-# Press key
-browser(action="press_key", key="Enter")
-
-# Screenshot (inline image)
-browser(action="screenshot")  # Returns ImageContent (renders in Claude Code)
-
-# Screenshot (file path only, no base64 - good for batch workflows)
-browser(action="screenshot_file")  # Returns file path like /tmp/.../page.png
-
-# Wait for text
-browser(action="wait_for", text="Welcome")
-
-# Run JavaScript
-browser(action="evaluate", script="() => document.title")
-
-# Select dropdown
-browser(action="select", ref="E10", element="Country", values=["US"])
-
-# Close browser
-browser(action="close")
+# New way: 1 round trip
+browser(action="fill_form", fields={
+    "#email": "john@example.com",
+    "#firstName": "John",
+    "#lastName": "Doe",
+    "#country": "United States"
+})
 ```
-
-### Batch Actions (Efficient)
-
-For multi-step flows, use `browser_batch` to reduce round-trips:
-
-```python
-browser_batch(steps=[
-    {"action": "navigate", "url": "https://example.com/login"},
-    {"action": "snapshot"},
-    {"action": "click", "ref": "E5", "element": "Login"},
-    {"action": "type", "ref": "E6", "element": "Email", "text": "user@example.com"},
-    {"action": "type", "ref": "E7", "element": "Password", "text": "password123"},
-    {"action": "click", "ref": "E8", "element": "Submit"},
-    {"action": "wait_for", "text": "Dashboard"},
-    {"action": "snapshot"}
-])
-```
-
-> **Note:** `browser_batch` omits image data from screenshot results to keep responses small. Use `browser(action="screenshot")` or `browser(action="screenshot_file")` separately if you need the actual image.
-
-## Architecture
-
-```
-Claude Code
-    │
-    ▼
-Browser Hub (FastMCP server, ~300 tokens)
-    │ Persistent connection
-    ▼
-Playwright MCP (spawned on first use, kept warm)
-    │
-    ▼
-Browser (Chromium)
-```
-
-Key design decisions:
-- **Lazy initialization**: Playwright only spawns on first browser action
-- **Persistent connection**: Same Playwright process for entire session
-- **Facade pattern**: 2 tools wrap 20+ underlying tools
-- **FastMCP Client**: Handles MCP protocol correctly (init, lifecycle, etc.)
-
-## Requirements
-
-- Node.js 18+ (for Playwright MCP)
-- Python 3.11+
-- `@playwright/mcp` (installed automatically via npx)

@@ -1,7 +1,7 @@
 [project]
 name = "browser-hub"
 version = "0.1.0"
-description = "Lightweight MCP facade for Playwright - reduces 20+ tools to 2"
+description = "Browser automation MCP with semantic element refs"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
