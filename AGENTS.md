@@ -10,6 +10,8 @@ This repo contains MCP servers that wrap heavier upstream servers:
 |------|---------|----------|
 | browser-hub | Browser automation | Playwright MCP |
 | search-hub | Web research | OpenAI API directly |
+| image-hub | Image generation | Vertex AI Gemini |
+| gdrive-hub | Google Drive access | Google Drive API |
 
 ## Development
 
@@ -23,15 +25,13 @@ Each tool is an independent Python package using:
 ```
 mcp-tools/
 ├── browser-hub/
-│   ├── pyproject.toml
-│   └── browser_hub/
-│       ├── __init__.py
-│       └── server.py
+│   └── browser_hub/server.py
 ├── search-hub/
-│   ├── pyproject.toml
-│   └── search_hub/
-│       ├── __init__.py
-│       └── server.py
+│   └── search_hub/server.py
+├── image-hub/
+│   └── image_hub/server.py
+├── gdrive-hub/
+│   └── gdrive_hub/server.py
 └── AGENTS.md
 ```
 

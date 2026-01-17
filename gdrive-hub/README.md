@@ -7,7 +7,7 @@ Lightweight MCP facade for Google Drive Shared Drives with service account authe
 - **list_files**: List files in folder or search with Drive queries
 - **get_file**: Get file metadata
 - **upload_file**: Upload local files (uses resumable upload)
-- **download_file**: Download files (auto-exports Google Docs to txt/csv/pdf)
+- **download_file**: Download files (auto-exports Google Docs to docx/xlsx/pdf)
 - **move_file**: Move files between folders
 - **create_folder**: Create new folders
 
@@ -54,6 +54,34 @@ uv run gdrive-hub
 }
 ```
 
+## Query Syntax
+
+The `list_files` tool accepts Google Drive query syntax. Common patterns:
+
+```python
+# By name
+list_files(query="name = 'exact-name.pdf'")
+list_files(query="name contains 'report'")
+
+# By type
+list_files(query="mimeType = 'application/pdf'")
+list_files(query="mimeType = 'application/vnd.google-apps.folder'")
+list_files(query="mimeType = 'application/vnd.google-apps.document'")
+list_files(query="mimeType = 'application/vnd.google-apps.spreadsheet'")
+
+# By date
+list_files(query="modifiedTime > '2024-01-01'")
+list_files(query="createdTime > '2024-01-01T12:00:00'")
+
+# Combine with AND
+list_files(query="name contains 'tax' and mimeType = 'application/pdf'")
+
+# Folder + query (searches within folder)
+list_files(folder_id="1ABC...", query="name contains 'invoice'")
+```
+
+For full query syntax, see [Google Drive API search files](https://developers.google.com/drive/api/guides/search-files).
+
 ## Google Docs Export
 
 When downloading Google Docs/Sheets/Slides, they're automatically exported:
@@ -64,4 +92,17 @@ When downloading Google Docs/Sheets/Slides, they're automatically exported:
 | Sheets | .xlsx | xlsx, pdf, csv |
 | Slides | .pdf | pptx, pdf |
 
-Use the `export_format` parameter to override defaults.
+Use the `export_format` parameter to override defaults:
+
+```python
+download_file(file_id="1XYZ...", export_format="pdf")
+download_file(file_id="1XYZ...", export_format="txt")
+```
+
+## Edge Cases
+
+- **Output path**: If `output_path` is omitted, files download to `~/Downloads/`
+- **Folder as output**: If `output_path` is a directory, filename is preserved
+- **Google Docs**: Cannot be downloaded directly - must be exported (handled automatically)
+- **Large files**: Resumable uploads handle large files gracefully
+- **Shared Drive root**: With `GDRIVE_DRIVE_ID` set, omitting `folder_id` targets the drive root
