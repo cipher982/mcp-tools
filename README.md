@@ -16,9 +16,9 @@ A personal collection of MCP servers I built for my Claude Code workflow. Some w
 
 | Hub | Purpose | Backend | Notes |
 |-----|---------|---------|-------|
-| **[browser-hub](./browser-hub/)** | Browser automation | Playwright MCP | Reduces 13k tokens to ~300 |
-| **[search-hub](./search-hub/)** | Web research | OpenAI API | Reduces 5k tokens to ~300 |
-| **[image-hub](./image-hub/)** | Image generation | Vertex AI Gemini | New capability |
+| **[browser-hub](./browser-hub/)** | Browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) | 24x token reduction, batch form filling |
+| **[search-hub](./search-hub/)** | Web research | OpenAI API | Synthesized answers with citations |
+| **[image-hub](./image-hub/)** | Image generation | Vertex AI Gemini | Gemini 3 Pro native image gen |
 
 ## Installation
 
@@ -68,16 +68,16 @@ Add to `~/.claude.json`:
 
 ```python
 browser(action="navigate", url="https://example.com")
-browser(action="snapshot")  # Returns element refs: E1, E2, E42...
-browser(action="click", ref="E5", element="Login button")
-browser(action="type", ref="E6", element="Email", text="user@example.com")
+browser(action="look")  # Screenshot + filtered elements in ONE call
 
-# Batch operations
-browser_batch(steps=[
-    {"action": "navigate", "url": "https://example.com"},
-    {"action": "snapshot"},
-    {"action": "click", "ref": "E5", "element": "Submit"}
-])
+# Batch fill forms (10x faster than individual type calls)
+browser(action="fill_form", fields={
+    "#email": "user@example.com",
+    "#name": "John Doe",
+    "#country": "United States"
+})
+
+browser(action="click", ref="@e5")  # Refs from accessibility tree
 ```
 
 ### Web Research
@@ -101,7 +101,7 @@ generate_image(prompt="A sunset over mountains", output_path="/tmp/sunset.png")
 |------------|---------|
 | Python 3.11+ | Runtime |
 | [uv](https://github.com/astral-sh/uv) | Package management |
-| Node.js 18+ | Playwright MCP (browser-hub) |
+| [agent-browser](https://github.com/vercel-labs/agent-browser) | browser-hub (`npm i -g agent-browser && agent-browser install`) |
 | OpenAI API key | search-hub |
 | Google Cloud project | image-hub |
 
