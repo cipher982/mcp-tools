@@ -36,18 +36,8 @@ async def run_codex(
     Environment variables respected:
         OPENAI_API_KEY: Required for Codex API access
     """
-    # Use codex-agent wrapper which has standard defaults
-    cmd = [
-        "codex-agent",
-        reasoning_effort,  # effort level as first arg
-        "exec",
-        "--skip-git-repo-check",
-    ]
-
-    if json_events:
-        cmd.append("--json")
-
-    cmd.append(task)
+    # Use codex-agent wrapper - handles config + auto-detects headless mode
+    cmd = ["codex-agent", reasoning_effort, task]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s

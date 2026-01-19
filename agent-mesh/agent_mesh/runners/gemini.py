@@ -12,13 +12,8 @@ async def run_gemini(prompt: str, cwd: str, timeout_s: int = 1800) -> AgentResul
     This runs a full agentic workflow (not a single LLM call), which includes
     tool use, retries, and I/O. The default 30min timeout accounts for this.
     """
-    # Use gemini-agent wrapper which has standard defaults (--yolo, model)
-    cmd = [
-        "gemini-agent",
-        "--output-format",
-        "json",
-        prompt,
-    ]
+    # Use gemini-agent wrapper - handles config + auto-detects headless mode
+    cmd = ["gemini-agent", prompt]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s

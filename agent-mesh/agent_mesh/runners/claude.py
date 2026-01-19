@@ -40,19 +40,13 @@ async def run_claude(
         AWS_PROFILE: AWS profile for Bedrock auth
         AWS_REGION: AWS region for Bedrock
     """
-    # Use claude-code wrapper which handles Bedrock/billing defaults
-    cmd = [
-        "claude-code",
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-    ]
+    # Use claude-code wrapper - handles env vars + auto-detects headless mode
+    cmd = ["claude-code", "-p", prompt]
 
     if auto_approve:
         cmd.append("--dangerously-skip-permissions")
 
-    # Model override (optional - wrapper has sensible defaults)
+    # Model override (optional)
     env: dict[str, str] = {}
     if model:
         env["ANTHROPIC_MODEL"] = model
