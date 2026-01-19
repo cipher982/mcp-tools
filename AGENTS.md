@@ -8,6 +8,7 @@ This repo contains MCP servers that wrap heavier upstream servers:
 
 | Tool | Purpose | Upstream |
 |------|---------|----------|
+| agent-mesh | Headless AI CLI runners | Claude/Codex/Gemini CLIs |
 | browser-hub | Browser automation | Playwright MCP |
 | search-hub | Web research | OpenAI API directly |
 | image-hub | Image generation | Vertex AI Gemini |
@@ -24,6 +25,8 @@ Each tool is an independent Python package using:
 
 ```
 mcp-tools/
+├── agent-mesh/
+│   └── agent_mesh/mcp_server.py
 ├── browser-hub/
 │   └── browser_hub/server.py
 ├── search-hub/
