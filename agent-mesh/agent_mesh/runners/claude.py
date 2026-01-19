@@ -40,8 +40,9 @@ async def run_claude(
         AWS_PROFILE: AWS profile for Bedrock auth
         AWS_REGION: AWS region for Bedrock
     """
+    # Use claude-code wrapper which handles Bedrock/billing defaults
     cmd = [
-        "claude",
+        "claude-code",
         "-p",
         prompt,
         "--output-format",
@@ -51,23 +52,10 @@ async def run_claude(
     if auto_approve:
         cmd.append("--dangerously-skip-permissions")
 
-    # Build environment - inherit from parent and add overrides
+    # Model override (optional - wrapper has sensible defaults)
     env: dict[str, str] = {}
-
-    # Bedrock configuration
-    if use_bedrock or os.environ.get("CLAUDE_CODE_USE_BEDROCK") == "1":
-        env["CLAUDE_CODE_USE_BEDROCK"] = "1"
-        env["AWS_PROFILE"] = aws_profile or os.environ.get("AWS_PROFILE", "")
-        env["AWS_REGION"] = aws_region or os.environ.get("AWS_REGION", "us-east-1")
-
-    # Model selection
     if model:
         env["ANTHROPIC_MODEL"] = model
-
-    # Pass through other relevant env vars
-    for key in ["ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL"]:
-        if key in os.environ and key not in env:
-            env[key] = os.environ[key]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s, env=env if env else None
