@@ -36,22 +36,13 @@ async def run_codex(
     Environment variables respected:
         OPENAI_API_KEY: Required for Codex API access
     """
-    # Base codex command with global options
+    # Use codex-agent wrapper which has standard defaults
     cmd = [
-        "codex",
-        "-m", model,
-        "-c", f"model_reasoning_effort={reasoning_effort}",
-    ]
-
-    if web_search:
-        cmd.extend(["--enable", "web_search_request"])
-
-    # exec subcommand with its specific options
-    cmd.append("exec")
-    cmd.extend([
-        "--dangerously-bypass-approvals-and-sandbox",
+        "codex-agent",
+        reasoning_effort,  # effort level as first arg
+        "exec",
         "--skip-git-repo-check",
-    ])
+    ]
 
     if json_events:
         cmd.append("--json")
