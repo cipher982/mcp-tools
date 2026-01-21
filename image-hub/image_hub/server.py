@@ -335,6 +335,18 @@ async def edit_image(
             return {"error": str(e), "path": None, "retriable": retriable}
 
 
+# Add batch support for parallel execution
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from shared.batch import add_batch_support
+
+add_batch_support(mcp, {
+    "generate_image": generate_image,
+    "generate_variants": generate_variants,
+    "edit_image": edit_image,
+})
+
+
 def main():
     """Entry point for the image-hub server."""
     mcp.run()

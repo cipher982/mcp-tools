@@ -4,8 +4,12 @@ Search Hub - Lightweight MCP facade for OpenAI web search.
 Reduces openai-websearch-mcp (~5.2k tokens) to <300 tokens.
 """
 
+import asyncio
 import json
 import os
+import sys
+import time
+import uuid
 from typing import Literal
 from fastmcp import FastMCP
 from openai import AsyncOpenAI
@@ -70,6 +74,11 @@ async def web_research(
 
     Returns synthesized answer with source URLs.
     """
+    # Timing instrumentation
+    request_id = uuid.uuid4().hex[:6]
+    start_time = time.time()
+    print(f"[{request_id}] STARTED at {start_time:.3f} - task: {task[:50]}...", file=sys.stderr, flush=True)
+
     client = get_openai_client()
 
     try:
@@ -102,12 +111,24 @@ async def web_research(
         # Return structured output
         result = {
             "answer": answer or "",
-            "sources": sources
+            "sources": sources,
+            "timing": {
+                "request_id": request_id,
+                "start": start_time,
+                "end": time.time(),
+                "duration_sec": time.time() - start_time
+            }
         }
+
+        end_time = time.time()
+        print(f"[{request_id}] FINISHED at {end_time:.3f} - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
 
         return json.dumps(result, indent=2)
 
     except Exception as e:
+        end_time = time.time()
+        print(f"[{request_id}] ERROR at {end_time:.3f} - duration: {end_time - start_time:.2f}s - {e}", file=sys.stderr, flush=True)
+
         # Determine if error is retriable
         retriable = isinstance(e, (OSError, ConnectionError, TimeoutError))
         # Also check for rate limit errors from OpenAI
@@ -119,9 +140,26 @@ async def web_research(
             "error": str(e),
             "answer": None,
             "sources": [],
-            "retriable": retriable
+            "retriable": retriable,
+            "timing": {
+                "request_id": request_id,
+                "start": start_time,
+                "end": end_time,
+                "duration_sec": end_time - start_time
+            }
         }
         return json.dumps(error_result, indent=2)
+
+
+# Add batch support for parallel execution
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from shared.batch import add_batch_support
+
+add_batch_support(mcp, {
+    "web_research": web_research,
+})
 
 
 def main():

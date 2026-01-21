@@ -8,7 +8,9 @@ Designed for Shared Drives with proper supportsAllDrives parameters.
 import asyncio
 import io
 import os
+import sys
 import time
+import uuid
 from pathlib import Path
 
 from fastmcp import FastMCP
@@ -166,6 +168,11 @@ async def list_files(
     Returns:
         {files: [{id, name, mimeType, size, webViewLink}], next_page_token?}
     """
+    # Timing instrumentation
+    request_id = uuid.uuid4().hex[:6]
+    start_time = time.time()
+    print(f"[gdrive:{request_id}] STARTED at {start_time:.3f}", file=sys.stderr, flush=True)
+
     from googleapiclient.errors import HttpError
 
     async with _semaphore:
@@ -219,12 +226,27 @@ async def list_files(
             if "nextPageToken" in result:
                 response["next_page_token"] = result["nextPageToken"]
 
+            end_time = time.time()
+            response["timing"] = {
+                "request_id": request_id,
+                "start": start_time,
+                "end": end_time,
+                "duration_sec": end_time - start_time
+            }
+            print(f"[gdrive:{request_id}] FINISHED at {end_time:.3f} - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
+
             return response
 
         except HttpError as e:
-            return handle_drive_error(e)
+            end_time = time.time()
+            print(f"[gdrive:{request_id}] ERROR at {end_time:.3f} - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
+            err = handle_drive_error(e)
+            err["timing"] = {"request_id": request_id, "start": start_time, "end": end_time, "duration_sec": end_time - start_time}
+            return err
         except Exception as e:
-            return {"error": str(e), "retriable": False}
+            end_time = time.time()
+            print(f"[gdrive:{request_id}] ERROR at {end_time:.3f} - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
+            return {"error": str(e), "retriable": False, "timing": {"request_id": request_id, "start": start_time, "end": end_time, "duration_sec": end_time - start_time}}
 
 
 @mcp.tool()
@@ -519,6 +541,21 @@ async def create_folder(name: str, parent_id: str | None = None) -> dict:
             return handle_drive_error(e)
         except Exception as e:
             return {"error": str(e), "retriable": False}
+
+
+# Add batch support for parallel execution
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from shared.batch import add_batch_support
+
+add_batch_support(mcp, {
+    "list_files": list_files,
+    "get_file": get_file,
+    "upload_file": upload_file,
+    "download_file": download_file,
+    "move_file": move_file,
+    "create_folder": create_folder,
+})
 
 
 def main():

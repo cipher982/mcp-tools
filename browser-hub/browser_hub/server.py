@@ -562,6 +562,18 @@ async def browser_batch(steps: list[dict]) -> str:
     return json.dumps(results, indent=2)
 
 
+# Add batch support for parallel execution
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from shared.batch import add_batch_support
+
+add_batch_support(mcp, {
+    "browser": browser,
+    "browser_batch": browser_batch,
+})
+
+
 def main():
     """Entry point for browser-hub server."""
     mcp.run()
