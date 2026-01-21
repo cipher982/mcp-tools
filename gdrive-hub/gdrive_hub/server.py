@@ -64,11 +64,12 @@ _service = None
 
 
 def get_service():
-    """Get or create Google Drive API service."""
+    """Get or create Google Drive API service with retry for startup race conditions."""
     global _service
     if _service is not None:
         return _service
 
+    import time
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
@@ -82,7 +83,20 @@ def get_service():
         creds_path,
         scopes=['https://www.googleapis.com/auth/drive']
     )
-    _service = build('drive', 'v3', credentials=creds)
+
+    # Retry loop for transient network errors during MCP startup
+    # [Errno 49] Can't assign requested address happens when network stack isn't ready
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            _service = build('drive', 'v3', credentials=creds)
+            return _service
+        except OSError as e:
+            if attempt < max_retries - 1 and e.errno in (49, 99):  # 49=macOS, 99=Linux
+                time.sleep(0.5 * (attempt + 1))  # Backoff: 0.5s, 1s
+                continue
+            raise
+
     return _service
 
 
