@@ -37,7 +37,11 @@ def add_batch_support(mcp_server, tools: dict[str, callable], max_concurrent: in
 
         async with semaphore:
             try:
-                result = await tools[tool_name](**args)
+                tool_func = tools[tool_name]
+                # Handle both raw functions and FastMCP FunctionTool wrappers
+                if hasattr(tool_func, 'fn'):
+                    tool_func = tool_func.fn
+                result = await tool_func(**args)
                 return {"ok": True, "value": result}
             except Exception as e:
                 return {
