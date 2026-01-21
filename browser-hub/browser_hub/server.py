@@ -41,9 +41,18 @@ mcp = FastMCP(
 
 # Auto-generate unique session ID for this MCP instance
 _default_session = f"mcp-{secrets.token_hex(4)}"
-_lock = asyncio.Lock()
+_session_locks: dict[str, asyncio.Lock] = {}
+_locks_lock = asyncio.Lock()  # Lock for accessing _session_locks dict
 _state_dir = Path.home() / ".browser-hub" / "states"
 _snapshot_dir = Path.home() / ".browser-hub" / "snapshots"
+
+
+async def _get_session_lock(session: str) -> asyncio.Lock:
+    """Get or create a lock for a specific session (enables per-session parallelism)."""
+    async with _locks_lock:
+        if session not in _session_locks:
+            _session_locks[session] = asyncio.Lock()
+        return _session_locks[session]
 
 # Interactive roles - these are always included in filtered snapshots
 _INTERACTIVE_ROLES = frozenset({
@@ -173,7 +182,9 @@ async def _run_cli(
     sess = session or _default_session
     full_args = ["agent-browser", "--session", sess] + args + ["--json"]
 
-    async with _lock:
+    # Use per-session lock to allow parallelism across different sessions
+    session_lock = await _get_session_lock(sess)
+    async with session_lock:
         proc = await asyncio.create_subprocess_exec(
             *full_args,
             stdout=asyncio.subprocess.PIPE,
@@ -185,7 +196,7 @@ async def _run_cli(
             )
         except asyncio.TimeoutError:
             proc.kill()
-            return {"success": False, "error": f"Timeout after {timeout}s"}
+            return {"success": False, "error": f"Timeout after {timeout}s", "retriable": True}
 
         if proc.returncode != 0:
             error_msg = (
@@ -193,7 +204,7 @@ async def _run_cli(
                 or stdout.decode().strip()
                 or f"Exit code {proc.returncode}"
             )
-            return {"success": False, "error": error_msg}
+            return {"success": False, "error": error_msg, "retriable": False}
 
         output = stdout.decode().strip()
         if not output:

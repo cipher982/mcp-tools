@@ -108,10 +108,18 @@ async def web_research(
         return json.dumps(result, indent=2)
 
     except Exception as e:
+        # Determine if error is retriable
+        retriable = isinstance(e, (OSError, ConnectionError, TimeoutError))
+        # Also check for rate limit errors from OpenAI
+        error_str = str(e).lower()
+        if "rate" in error_str or "429" in error_str or "timeout" in error_str:
+            retriable = True
+
         error_result = {
             "error": str(e),
             "answer": None,
-            "sources": []
+            "sources": [],
+            "retriable": retriable
         }
         return json.dumps(error_result, indent=2)
 

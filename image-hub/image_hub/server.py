@@ -5,14 +5,14 @@ Wraps google-genai Vertex AI for image generation with minimal token overhead.
 Images are saved to files and paths returned for easy use in agent workflows.
 """
 
-import base64
+import asyncio
 import io
 import os
+import re
+import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from fastmcp import FastMCP
 from PIL import Image
@@ -39,22 +39,23 @@ LOCATION = "us-central1"
 DEFAULT_MODEL = "gemini-3-pro-image-preview"
 OUTPUT_DIR = Path.home() / "Pictures" / "image-hub"
 
-# Valid aspect ratios
-ASPECT_RATIOS = Literal[
-    "1:1", "2:3", "3:2", "3:4", "4:3",
-    "4:5", "5:4", "9:16", "16:9", "21:9"
-]
-
-# Global client (lazy init)
-_client = None
+# Concurrency limit
+_semaphore = asyncio.Semaphore(4)
 
 
-def get_client():
-    """Get or create Vertex AI client."""
-    global _client
-    if _client is not None:
-        return _client
+def _sanitize_project_name(name: str) -> str:
+    """Sanitize project name to prevent path traversal attacks."""
+    # Remove any path separators and parent directory references
+    sanitized = re.sub(r'[/\\]', '_', name)
+    sanitized = sanitized.replace('..', '_')
+    # Only allow alphanumeric, dash, underscore
+    sanitized = re.sub(r'[^A-Za-z0-9_-]', '_', sanitized)
+    # Limit length
+    return sanitized[:64] if sanitized else "default"
 
+
+def _get_client_sync():
+    """Create Vertex AI client (blocking, run in thread)."""
     from google import genai
 
     # Check for credentials
@@ -65,8 +66,7 @@ def get_client():
         if os.path.exists(local_creds):
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = local_creds
 
-    _client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
-    return _client
+    return genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
 
 
 def get_safety_settings():
@@ -103,7 +103,9 @@ def save_image(image_bytes: bytes, prefix: str = "img", project: str | None = No
     """Save image bytes to file, return absolute path."""
     output_dir = ensure_output_dir()
     if project:
-        output_dir = output_dir / project
+        # Sanitize project name to prevent path traversal
+        safe_project = _sanitize_project_name(project)
+        output_dir = output_dir / safe_project
         output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     short_id = uuid.uuid4().hex[:6]
@@ -113,18 +115,18 @@ def save_image(image_bytes: bytes, prefix: str = "img", project: str | None = No
     return str(filepath)
 
 
-def generate_single_image(
+def _generate_single_image_sync(
+    client,
     prompt: str,
     aspect_ratio: str = "1:1",
     model: str = DEFAULT_MODEL,
 ) -> bytes | None:
-    """Generate a single image, returning PNG bytes or None on failure."""
+    """Generate a single image synchronously (run in thread)."""
     from google.genai import types
 
-    client = get_client()
-    max_retries = 2
+    max_retries = 3
 
-    for attempt in range(max_retries + 1):
+    for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
                 model=model,
@@ -137,7 +139,10 @@ def generate_single_image(
 
             # Extract image from response
             if not response.candidates:
-                continue
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Backoff
+                    continue
+                return None
 
             candidate = response.candidates[0]
             if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
@@ -146,15 +151,17 @@ def generate_single_image(
                         return part.inline_data.data
 
         except Exception as e:
-            if attempt == max_retries:
-                raise
-            continue
+            if attempt < max_retries - 1:
+                # Exponential backoff with jitter
+                time.sleep(0.5 * (attempt + 1) + (uuid.uuid4().int % 100) / 1000)
+                continue
+            raise
 
     return None
 
 
 @mcp.tool()
-def generate_image(
+async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
     project: str | None = None,
@@ -170,24 +177,29 @@ def generate_image(
     Returns:
         Dict with "path" (absolute file path to PNG) and metadata
     """
-    try:
-        image_bytes = generate_single_image(prompt, aspect_ratio)
+    async with _semaphore:
+        try:
+            client = await asyncio.to_thread(_get_client_sync)
+            image_bytes = await asyncio.to_thread(
+                _generate_single_image_sync, client, prompt, aspect_ratio
+            )
 
-        if image_bytes is None:
-            return {"error": "Failed to generate image", "path": None}
+            if image_bytes is None:
+                return {"error": "Failed to generate image", "path": None, "retriable": True}
 
-        filepath = save_image(image_bytes, prefix="gen", project=project)
-        return {
-            "path": filepath,
-            "aspect_ratio": aspect_ratio,
-            "format": "png",
-        }
-    except Exception as e:
-        return {"error": str(e), "path": None}
+            filepath = save_image(image_bytes, prefix="gen", project=project)
+            return {
+                "path": filepath,
+                "aspect_ratio": aspect_ratio,
+                "format": "png",
+            }
+        except Exception as e:
+            retriable = isinstance(e, (OSError, ConnectionError, TimeoutError))
+            return {"error": str(e), "path": None, "retriable": retriable}
 
 
 @mcp.tool()
-def generate_variants(
+async def generate_variants(
     prompt: str,
     num_variants: int = 2,
     aspect_ratio: str = "1:1",
@@ -207,35 +219,39 @@ def generate_variants(
     """
     num_variants = min(max(1, num_variants), 4)  # Clamp to 1-4
 
-    try:
-        # Generate in parallel
-        with ThreadPoolExecutor(max_workers=num_variants) as executor:
-            futures = [
-                executor.submit(generate_single_image, prompt, aspect_ratio)
-                for _ in range(num_variants)
-            ]
-            results = [f.result() for f in futures]
+    async with _semaphore:
+        try:
+            client = await asyncio.to_thread(_get_client_sync)
 
-        # Save successful results to files
-        paths = []
-        for i, img_bytes in enumerate(results):
-            if img_bytes is not None:
-                filepath = save_image(img_bytes, prefix=f"var{i+1}", project=project)
-                paths.append(filepath)
+            # Generate in parallel using asyncio
+            async def gen_one():
+                return await asyncio.to_thread(
+                    _generate_single_image_sync, client, prompt, aspect_ratio
+                )
 
-        return {
-            "paths": paths,
-            "count": len(paths),
-            "requested": num_variants,
-            "aspect_ratio": aspect_ratio,
-            "format": "png",
-        }
-    except Exception as e:
-        return {"error": str(e), "paths": [], "count": 0}
+            results = await asyncio.gather(*[gen_one() for _ in range(num_variants)])
+
+            # Save successful results to files
+            paths = []
+            for i, img_bytes in enumerate(results):
+                if img_bytes is not None:
+                    filepath = save_image(img_bytes, prefix=f"var{i+1}", project=project)
+                    paths.append(filepath)
+
+            return {
+                "paths": paths,
+                "count": len(paths),
+                "requested": num_variants,
+                "aspect_ratio": aspect_ratio,
+                "format": "png",
+            }
+        except Exception as e:
+            retriable = isinstance(e, (OSError, ConnectionError, TimeoutError))
+            return {"error": str(e), "paths": [], "count": 0, "retriable": retriable}
 
 
 @mcp.tool()
-def edit_image(
+async def edit_image(
     prompt: str,
     image_path: str,
     aspect_ratio: str | None = None,
@@ -255,63 +271,68 @@ def edit_image(
     """
     from google.genai import types
 
-    try:
-        client = get_client()
+    async with _semaphore:
+        try:
+            client = await asyncio.to_thread(_get_client_sync)
 
-        # Read input image
-        image_path = Path(image_path).expanduser()
-        if not image_path.exists():
-            return {"error": f"Image not found: {image_path}", "path": None}
+            # Read input image
+            image_path_obj = Path(image_path).expanduser()
+            if not image_path_obj.exists():
+                return {"error": f"Image not found: {image_path_obj}", "path": None, "retriable": False}
 
-        image_bytes = image_path.read_bytes()
+            image_bytes = image_path_obj.read_bytes()
 
-        # Determine aspect ratio from input if not specified
-        if aspect_ratio is None:
-            img = Image.open(io.BytesIO(image_bytes))
-            w, h = img.size
-            # Find closest standard ratio
-            ratio = w / h
-            if ratio > 1.5:
-                aspect_ratio = "16:9"
-            elif ratio < 0.67:
-                aspect_ratio = "9:16"
-            else:
-                aspect_ratio = "1:1"
+            # Determine aspect ratio from input if not specified
+            if aspect_ratio is None:
+                img = Image.open(io.BytesIO(image_bytes))
+                w, h = img.size
+                # Find closest standard ratio
+                ratio = w / h
+                if ratio > 1.5:
+                    aspect_ratio = "16:9"
+                elif ratio < 0.67:
+                    aspect_ratio = "9:16"
+                else:
+                    aspect_ratio = "1:1"
 
-        # Detect mime type
-        mime_type = "image/png"
-        if image_path.suffix.lower() in (".jpg", ".jpeg"):
-            mime_type = "image/jpeg"
+            # Detect mime type
+            mime_type = "image/png"
+            if image_path_obj.suffix.lower() in (".jpg", ".jpeg"):
+                mime_type = "image/jpeg"
 
-        # Build multimodal content
-        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+            # Build multimodal content
+            image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
-        response = client.models.generate_content(
-            model=DEFAULT_MODEL,
-            contents=[image_part, prompt],
-            config=types.GenerateContentConfig(
-                image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
-                safety_settings=get_safety_settings(),
-            ),
-        )
+            def _edit():
+                return client.models.generate_content(
+                    model=DEFAULT_MODEL,
+                    contents=[image_part, prompt],
+                    config=types.GenerateContentConfig(
+                        image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+                        safety_settings=get_safety_settings(),
+                    ),
+                )
 
-        # Extract result image
-        if response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
-                for part in candidate.content.parts:
-                    if hasattr(part, "inline_data") and part.inline_data:
-                        filepath = save_image(part.inline_data.data, prefix="edit", project=project)
-                        return {
-                            "path": filepath,
-                            "aspect_ratio": aspect_ratio,
-                            "format": "png",
-                        }
+            response = await asyncio.to_thread(_edit)
 
-        return {"error": "No image in response", "path": None}
+            # Extract result image
+            if response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, "inline_data") and part.inline_data:
+                            filepath = save_image(part.inline_data.data, prefix="edit", project=project)
+                            return {
+                                "path": filepath,
+                                "aspect_ratio": aspect_ratio,
+                                "format": "png",
+                            }
 
-    except Exception as e:
-        return {"error": str(e), "path": None}
+            return {"error": "No image in response", "path": None, "retriable": True}
+
+        except Exception as e:
+            retriable = isinstance(e, (OSError, ConnectionError, TimeoutError))
+            return {"error": str(e), "path": None, "retriable": retriable}
 
 
 def main():
