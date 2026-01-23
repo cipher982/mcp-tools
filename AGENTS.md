@@ -9,7 +9,7 @@ This repo contains MCP servers that wrap heavier upstream servers:
 | Tool | Purpose | Upstream |
 |------|---------|----------|
 | agent-mesh | Headless AI CLI runners | Claude/Codex/Gemini CLIs |
-| browser-hub | Browser automation | Playwright MCP |
+| browser-hub | Browser automation | agent-browser CLI (Vercel Labs) |
 | search-hub | Web research | OpenAI API directly |
 | image-hub | Image generation | Vertex AI Gemini |
 | gdrive-hub | Google Drive access | Google Drive API |

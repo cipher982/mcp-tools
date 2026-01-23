@@ -1,7 +1,9 @@
 """
-Search Hub - Lightweight MCP facade for OpenAI web search.
+Search Hub - Lightweight MCP facade for web search.
 
-Reduces openai-websearch-mcp (~5.2k tokens) to <300 tokens.
+Supports:
+- OpenAI (GPT-5.2 + web search) for general research
+- xAI (Grok + X Search) for Twitter/X discussions
 """
 
 import asyncio
@@ -18,14 +20,21 @@ from openai import AsyncOpenAI
 mcp = FastMCP(
     "search-hub",
     instructions="""
-    Web research using OpenAI with web search.
-    Pass complete questions or tasks, not keywords.
-    Returns synthesized answers with citations.
+    Agentic web research - the model autonomously searches and synthesizes.
+
+    ONE call with a specific question. The model handles multiple searches internally.
+    Ask what you actually want to know, not search keywords.
+
+    Sources:
+    - "openai" (default): GPT-5.2 with web search for general research
+    - "x": Grok with X Search for Twitter/X discussions and trends
+    - "both": Run both in parallel (~52s), returns separate answers
     """
 )
 
-# Initialize OpenAI async client
+# Initialize clients lazily
 _openai_client = None
+_xai_client = None
 
 
 def get_openai_client() -> AsyncOpenAI:
@@ -37,6 +46,20 @@ def get_openai_client() -> AsyncOpenAI:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         _openai_client = AsyncOpenAI(api_key=api_key)
     return _openai_client
+
+
+def get_xai_client() -> AsyncOpenAI:
+    """Get or create async xAI client (OpenAI-compatible)."""
+    global _xai_client
+    if _xai_client is None:
+        api_key = os.getenv("XAI_API_KEY")
+        if not api_key:
+            raise ValueError("XAI_API_KEY environment variable not set")
+        _xai_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url="https://api.x.ai/v1"
+        )
+    return _xai_client
 
 
 def extract_sources(response) -> list[dict[str, str]]:
@@ -60,91 +83,214 @@ def extract_sources(response) -> list[dict[str, str]]:
     return sources
 
 
+async def _openai_search(task: str, reasoning_effort: str, request_id: str, start_time: float) -> dict:
+    """OpenAI web search implementation."""
+    client = get_openai_client()
+
+    response = await client.responses.create(
+        model="gpt-5.2",
+        input=task,
+        tools=[{"type": "web_search_preview"}],
+        include=["web_search_call.action.sources"],
+        reasoning={"effort": reasoning_effort},
+    )
+
+    # Extract answer - output_text is the simplest way
+    answer = getattr(response, 'output_text', None)
+
+    # Fallback: extract from message content if output_text not available
+    if not answer and hasattr(response, 'output') and response.output:
+        for output_item in response.output:
+            if output_item.type == "message" and hasattr(output_item, 'content'):
+                for content_item in output_item.content:
+                    if hasattr(content_item, 'text') and content_item.text:
+                        answer = content_item.text
+                        break
+                if answer:
+                    break
+
+    # Extract sources from web_search_call
+    sources = extract_sources(response)
+
+    return {"answer": answer or "", "sources": sources}
+
+
+async def _xai_search(task: str, request_id: str, start_time: float) -> dict:
+    """xAI X Search implementation for Twitter/X discussions."""
+    client = get_xai_client()
+
+    response = await client.chat.completions.create(
+        model="grok-4-1-fast-non-reasoning",
+        messages=[{"role": "user", "content": task}],
+        extra_body={
+            "search_parameters": {
+                "mode": "auto",
+                "sources": [{"type": "x"}],  # X/Twitter only
+            }
+        }
+    )
+
+    # Guard against empty choices
+    if not response.choices:
+        return {"answer": "", "sources": []}
+
+    # Extract answer from chat completion
+    answer = response.choices[0].message.content or ""
+
+    # Extract sources - xAI returns citations at response level or on message
+    sources = []
+    citations = None
+    if hasattr(response, 'citations') and response.citations:
+        citations = response.citations
+    elif hasattr(response.choices[0].message, 'citations') and response.choices[0].message.citations:
+        citations = response.choices[0].message.citations
+
+    if citations:
+        for url in citations:
+            sources.append({"url": url})
+
+    return {"answer": answer, "sources": sources}
+
+
 @mcp.tool()
 async def web_research(
     task: str,
+    source: Literal["openai", "x", "both"] = "openai",
     reasoning_effort: Literal["low", "medium", "high"] = "medium",
 ) -> str:
     """
-    Research a topic using web search with GPT-5.2 reasoning.
+    Research a topic using agentic web search.
     Pass complete questions or tasks, not keywords.
 
-    Good: "What are the latest quantum computing breakthroughs in 2025?"
-    Bad: "quantum computing news"
+    Good: "How does xAI's Grok API handle tool calling for X Search?"
+    Bad: "xAI API docs" or "Grok tool calling"
 
+    Sources:
+    - "openai" (default): GPT-5.2 with web search for general research
+    - "x": Grok with X Search for Twitter/X discussions and trends
+    - "both": Run both in parallel, returns separate answers
+
+    ONE call is sufficient - the model runs multiple searches internally.
     Returns synthesized answer with source URLs.
     """
-    # Timing instrumentation
     request_id = uuid.uuid4().hex[:6]
     start_time = time.time()
-    print(f"[{request_id}] STARTED at {start_time:.3f} - task: {task[:50]}...", file=sys.stderr, flush=True)
+    timeout_seconds = 300  # 5 minute timeout
+    print(f"[{request_id}] STARTED source={source} - task: {task[:50]}...", file=sys.stderr, flush=True)
 
-    client = get_openai_client()
+    def _format_error(exc: Exception, provider: str) -> dict:
+        """Format an exception as a structured error dict."""
+        error_str = str(exc).lower()
+        is_timeout = isinstance(exc, asyncio.TimeoutError)
+        retriable = is_timeout or isinstance(exc, (OSError, ConnectionError, TimeoutError))
+        if "rate" in error_str or "429" in error_str or "timeout" in error_str:
+            retriable = True
+        error_msg = f"{provider} search timed out after {timeout_seconds}s" if is_timeout else str(exc)
+        return {"error": error_msg, "retriable": retriable}
 
     try:
-        # Call OpenAI Responses API with web search + reasoning
-        response = await client.responses.create(
-            model="gpt-5.2",
-            input=task,
-            tools=[{"type": "web_search_preview"}],
-            include=["web_search_call.action.sources"],
-            reasoning={"effort": reasoning_effort},
-        )
+        if source == "both":
+            # Run both searches in parallel with timeout
+            openai_task = asyncio.wait_for(
+                _openai_search(task, reasoning_effort, request_id, start_time),
+                timeout=timeout_seconds
+            )
+            x_task = asyncio.wait_for(
+                _xai_search(task, request_id, start_time),
+                timeout=timeout_seconds
+            )
+            openai_result, x_result = await asyncio.gather(openai_task, x_task, return_exceptions=True)
 
-        # Extract answer - output_text is the simplest way
-        answer = getattr(response, 'output_text', None)
+            # Handle potential errors from either with structured error info
+            if isinstance(openai_result, dict):
+                openai_answer = openai_result.get("answer", "")
+                openai_sources = openai_result.get("sources", [])
+                openai_error = None
+            else:
+                openai_error = _format_error(openai_result, "OpenAI")
+                openai_answer = openai_error["error"]
+                openai_sources = []
 
-        # Fallback: extract from message content if output_text not available
-        if not answer and hasattr(response, 'output') and response.output:
-            for output_item in response.output:
-                if output_item.type == "message" and hasattr(output_item, 'content'):
-                    for content_item in output_item.content:
-                        if hasattr(content_item, 'text') and content_item.text:
-                            answer = content_item.text
-                            break
-                    if answer:
-                        break
+            if isinstance(x_result, dict):
+                x_answer = x_result.get("answer", "")
+                x_sources = x_result.get("sources", [])
+                x_error = None
+            else:
+                x_error = _format_error(x_result, "xAI")
+                x_answer = x_error["error"]
+                x_sources = []
 
-        # Extract sources from web_search_call
-        sources = extract_sources(response)
-
-        # Return structured output
-        result = {
-            "answer": answer or "",
-            "sources": sources,
-            "timing": {
-                "request_id": request_id,
-                "start": start_time,
-                "end": time.time(),
-                "duration_sec": time.time() - start_time
+            result = {
+                "openai_answer": openai_answer,
+                "x_answer": x_answer,
+                "sources": {"openai": openai_sources, "x": x_sources},
+                "source": "both",
+                "timing": {
+                    "request_id": request_id,
+                    "duration_sec": time.time() - start_time
+                }
             }
-        }
+            # Add structured errors if any occurred
+            if openai_error or x_error:
+                result["errors"] = {}
+                if openai_error:
+                    result["errors"]["openai"] = openai_error
+                if x_error:
+                    result["errors"]["x"] = x_error
+        elif source == "x":
+            result_data = await asyncio.wait_for(
+                _xai_search(task, request_id, start_time),
+                timeout=timeout_seconds
+            )
+            result = {
+                "answer": result_data["answer"],
+                "sources": result_data["sources"],
+                "source": source,
+                "timing": {
+                    "request_id": request_id,
+                    "duration_sec": time.time() - start_time
+                }
+            }
+        else:
+            result_data = await asyncio.wait_for(
+                _openai_search(task, reasoning_effort, request_id, start_time),
+                timeout=timeout_seconds
+            )
+            result = {
+                "answer": result_data["answer"],
+                "sources": result_data["sources"],
+                "source": source,
+                "timing": {
+                    "request_id": request_id,
+                    "duration_sec": time.time() - start_time
+                }
+            }
 
         end_time = time.time()
-        print(f"[{request_id}] FINISHED at {end_time:.3f} - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
+        print(f"[{request_id}] FINISHED - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
 
         return json.dumps(result, indent=2)
 
     except Exception as e:
         end_time = time.time()
-        print(f"[{request_id}] ERROR at {end_time:.3f} - duration: {end_time - start_time:.2f}s - {e}", file=sys.stderr, flush=True)
+        print(f"[{request_id}] ERROR - duration: {end_time - start_time:.2f}s - {e}", file=sys.stderr, flush=True)
 
-        # Determine if error is retriable
-        retriable = isinstance(e, (OSError, ConnectionError, TimeoutError))
-        # Also check for rate limit errors from OpenAI
+        is_timeout = isinstance(e, asyncio.TimeoutError)
+        retriable = is_timeout or isinstance(e, (OSError, ConnectionError, TimeoutError))
         error_str = str(e).lower()
         if "rate" in error_str or "429" in error_str or "timeout" in error_str:
             retriable = True
 
+        error_msg = f"Search timed out after {timeout_seconds}s" if is_timeout else str(e)
+
         error_result = {
-            "error": str(e),
+            "error": error_msg,
             "answer": None,
             "sources": [],
+            "source": source,
             "retriable": retriable,
             "timing": {
                 "request_id": request_id,
-                "start": start_time,
-                "end": end_time,
                 "duration_sec": end_time - start_time
             }
         }
