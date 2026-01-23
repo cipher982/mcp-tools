@@ -1,4 +1,4 @@
-"""Gemini CLI runner."""
+"""Gemini CLI runner - uses hatch."""
 
 import json
 
@@ -7,13 +7,13 @@ from agent_mesh.types import AgentResult, Usage
 
 
 async def run_gemini(prompt: str, cwd: str, timeout_s: int = 1800) -> AgentResult:
-    """Run Gemini CLI in headless mode.
+    """Run Gemini CLI in headless mode via hatch.
 
     This runs a full agentic workflow (not a single LLM call), which includes
     tool use, retries, and I/O. The default 30min timeout accounts for this.
     """
-    # Use gemini-agent wrapper - handles config + auto-detects headless mode
-    cmd = ["gemini-agent", prompt]
+    # Use hatch CLI - unified headless agent runner
+    cmd = ["hatch", "-b", "gemini", "--json", prompt]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s
@@ -21,34 +21,20 @@ async def run_gemini(prompt: str, cwd: str, timeout_s: int = 1800) -> AgentResul
 
     duration_ms = int((ended_at - started_at).total_seconds() * 1000)
 
-    # Gemini outputs JSON in headless mode
+    # Parse JSON output from hatch
     structured: dict = {}
     usage = Usage()
-    has_error = False
+    is_error = False
 
-    if exit_code == 0 and stdout.strip():
+    if stdout.strip():
         try:
             data = json.loads(stdout)
-            # Only keep essential fields, not full conversation history
-            if "response" in data:
-                structured["response"] = data["response"]
-            if "error" in data:
-                structured["error"] = data["error"]
-                has_error = True
-            # Extract usage stats if present
-            if "stats" in data:
-                usage = Usage(
-                    input_tokens=data["stats"].get("inputTokens"),
-                    output_tokens=data["stats"].get("outputTokens"),
-                )
-                structured["stats"] = data["stats"]
+            structured = data
+            is_error = not data.get("ok", False)
+            if "output" in data:
+                structured["result"] = data["output"]
         except json.JSONDecodeError:
-            # Gemini might output plain text in some modes - truncate if huge
-            max_raw = 2000
-            raw = stdout.strip()[:max_raw]
-            if len(stdout.strip()) > max_raw:
-                raw += f"\n... [truncated {len(stdout.strip()) - max_raw} chars]"
-            structured = {"response": raw}
+            structured = {"raw_output": stdout[:2000]}
 
     # Truncate stdout to avoid context blowup
     max_stdout = 2000
@@ -59,7 +45,7 @@ async def run_gemini(prompt: str, cwd: str, timeout_s: int = 1800) -> AgentResul
     return AgentResult(
         agent="gemini",
         cwd=cwd,
-        ok=(exit_code == 0 and not has_error),
+        ok=exit_code == 0 and not is_error,
         exit_code=exit_code,
         started_at=started_at,
         ended_at=ended_at,

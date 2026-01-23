@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 # Create MCP server
 mcp = FastMCP(
     name="agent-mesh",
-    instructions="Agent mesh for headless CLI coordination between Claude, Codex, and Gemini.",
+    instructions="Agent mesh for headless CLI coordination. 4 agents: Claude (Bedrock), z.ai (GLM-4.7), Codex (GPT-5.2), Gemini.",
 )
 
 
@@ -19,10 +19,22 @@ async def claude_run(
     cwd: Annotated[str, "Working directory"] = ".",
     model: Annotated[str | None, "Model ID (e.g., us.anthropic.claude-sonnet-4-5-20250929-v1:0)"] = None,
 ) -> str:
-    """Run Claude Code CLI in headless mode. Full agentic workflow with tool use. Default 30min timeout. Uses Bedrock if CLAUDE_CODE_USE_BEDROCK=1."""
+    """Run Claude Code CLI with AWS Bedrock (Claude Sonnet). Full agentic workflow with tool use. Default 30min timeout."""
     from agent_mesh.runners.claude import run_claude
 
     result = await run_claude(prompt, cwd, 1800, auto_approve=True, model=model)
+    return result.model_dump_json(indent=2)
+
+
+@mcp.tool()
+async def zai_run(
+    prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
+    cwd: Annotated[str, "Working directory"] = ".",
+) -> str:
+    """Run Claude Code CLI with z.ai backend (GLM-4.7). Full agentic workflow with tool use. Default 30min timeout. Requires ZAI_API_KEY."""
+    from agent_mesh.runners.zai import run_zai
+
+    result = await run_zai(prompt, cwd, 1800)
     return result.model_dump_json(indent=2)
 
 

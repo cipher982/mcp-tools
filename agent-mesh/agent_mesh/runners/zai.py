@@ -1,4 +1,4 @@
-"""Claude Code CLI runner - uses hatch."""
+"""z.ai CLI runner - uses hatch."""
 
 import json
 
@@ -6,42 +6,26 @@ from agent_mesh.runners.base import run_subprocess
 from agent_mesh.types import AgentResult, Usage
 
 
-async def run_claude(
+async def run_zai(
     prompt: str,
     cwd: str,
     timeout_s: int = 1800,
-    auto_approve: bool = True,
-    model: str | None = None,
-    use_bedrock: bool | None = None,
-    aws_profile: str | None = None,
-    aws_region: str | None = None,
 ) -> AgentResult:
-    """Run Claude Code CLI in headless mode via hatch.
+    """Run Claude Code CLI with z.ai backend (GLM-4.7) via hatch.
 
     This runs a full agentic workflow (not a single LLM call), which includes
     tool use, retries, and I/O. The default 30min timeout accounts for this.
 
     Args:
-        prompt: The prompt to send to Claude
+        prompt: The prompt to send
         cwd: Working directory
         timeout_s: Timeout in seconds (default 1800=30min for full agentic workflow)
-        auto_approve: If True, bypass permission checks (default True for headless)
-        model: Model to use (defaults to env ANTHROPIC_MODEL)
-        use_bedrock: Use Bedrock (defaults to env CLAUDE_CODE_USE_BEDROCK)
-        aws_profile: AWS profile for Bedrock
-        aws_region: AWS region for Bedrock
 
     Environment variables respected:
-        CLAUDE_CODE_USE_BEDROCK: Set to "1" for Bedrock
-        ANTHROPIC_MODEL: Model ID (e.g., us.anthropic.claude-sonnet-4-5-20250929-v1:0)
-        AWS_PROFILE: AWS profile for Bedrock auth
-        AWS_REGION: AWS region for Bedrock
-        ZAI_API_KEY: API key for zai backend
+        ZAI_API_KEY: API key for z.ai backend
     """
     # Use hatch CLI - unified headless agent runner
-    # Default to bedrock backend (matches previous behavior)
-    backend = "bedrock"
-    cmd = ["hatch", "-b", backend, "--json", prompt]
+    cmd = ["hatch", "-b", "zai", "--json", prompt]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s
@@ -71,7 +55,7 @@ async def run_claude(
         truncated_stdout += f"\n... [truncated {len(stdout) - max_stdout} chars]"
 
     return AgentResult(
-        agent="claude",
+        agent="zai",
         cwd=cwd,
         ok=exit_code == 0 and not is_error,
         exit_code=exit_code,
