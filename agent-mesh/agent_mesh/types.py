@@ -24,7 +24,7 @@ class Artifacts(BaseModel):
 class AgentResult(BaseModel):
     """Normalized result from any agent run."""
 
-    agent: Literal["claude", "codex", "gemini", "unknown"]
+    agent: Literal["claude", "zai", "codex", "gemini", "unknown"]
     mode: Literal["headless"] = "headless"
     cwd: str
     ok: bool
