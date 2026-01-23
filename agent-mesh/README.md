@@ -1,14 +1,15 @@
 # agent-mesh
 
-MCP server exposing headless CLI runners for Claude, Codex, and Gemini.
+MCP server for headless AI agent coordination. Spawns Claude, Codex, and Gemini agents.
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| `claude_run` | Run Claude Code headlessly |
-| `codex_run` | Run OpenAI Codex headlessly |
-| `gemini_run` | Run Google Gemini CLI headlessly |
+| Tool | Backend | Model |
+|------|---------|-------|
+| `claude_run` | AWS Bedrock | Claude Sonnet |
+| `zai_run` | z.ai | GLM-4.7 |
+| `codex_run` | OpenAI | GPT-5.2 Codex |
+| `gemini_run` | Google | Gemini |
 
 ## Usage
 
@@ -17,35 +18,23 @@ cd agent-mesh && uv sync
 uv run agent-mesh
 ```
 
-## Raw Commands (for scripts)
+## Direct CLI (without MCP)
 
-If you don't need MCP, use these directly:
-
-```bash
-# Claude
-claude-code -p "prompt" --dangerously-skip-permissions
-
-# Codex
-codex-agent low "prompt"
-
-# Gemini
-gemini-agent "prompt"
-```
-
-## Claude Code Backends
-
-Claude Code can use different backends via environment variables:
+Uses `hatch` CLI (`uv tool install -e ~/git/hatch`):
 
 ```bash
-# Default (Bedrock)
-CLAUDE_CODE_USE_BEDROCK=1 claude-code -p "prompt"
-
-# Direct Anthropic API
-ANTHROPIC_API_KEY=... claude-code -p "prompt"
-
-# z.ai (GLM models)
-ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic" \
-ANTHROPIC_API_KEY="<zai-key>" \
-ANTHROPIC_MODEL="glm-4.7" \
-claude-code -p "prompt"
+hatch "prompt"                    # z.ai (default)
+hatch -b bedrock "prompt"         # AWS Bedrock
+hatch -b codex "prompt"           # OpenAI Codex
+hatch -b gemini "prompt"          # Google Gemini
+hatch --json -b zai "prompt"      # JSON output
 ```
+
+## Environment Variables
+
+| Backend | Required |
+|---------|----------|
+| bedrock | `AWS_PROFILE`, `AWS_REGION` |
+| zai | `ZAI_API_KEY` |
+| codex | `OPENAI_API_KEY` |
+| gemini | Gemini CLI OAuth (no key needed) |
