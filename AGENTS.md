@@ -13,6 +13,7 @@ This repo contains MCP servers that wrap heavier upstream servers:
 | search-hub | Web research | OpenAI API directly |
 | image-hub | Image generation | Vertex AI Gemini |
 | gdrive-hub | Google Drive access | Google Drive API |
+| google-ads-hub | Google Ads analysis | Google Ads API |
 
 ## Development
 

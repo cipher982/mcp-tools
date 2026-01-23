@@ -1,11 +1,9 @@
 """Claude Code CLI runner."""
 
 import json
-import os
-from datetime import timezone
 
 from agent_mesh.runners.base import run_subprocess
-from agent_mesh.types import AgentResult, Artifacts, Usage
+from agent_mesh.types import AgentResult, Usage
 
 
 async def run_claude(

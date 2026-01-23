@@ -140,24 +140,5 @@ def run(
     typer.echo(result.model_dump_json(indent=2))
 
 
-@app.command()
-def pipeline(
-    name: Annotated[str, typer.Argument(help="Pipeline name: review")],
-    prompt: Annotated[str, typer.Option("--prompt", "-p", help="Prompt for the pipeline")] = "",
-    cwd: Annotated[str, typer.Option("--cwd", "-C", help="Working directory")] = ".",
-) -> None:
-    """Run a pipeline (e.g., review: Claude implements → Codex reviews)."""
-    if name == "review":
-        import asyncio
-
-        from agent_mesh.pipelines.review import run_review_pipeline
-
-        result = asyncio.run(run_review_pipeline(prompt, cwd))
-        typer.echo(result)
-    else:
-        typer.echo(f"Unknown pipeline: {name}", err=True)
-        raise typer.Exit(1)
-
-
 if __name__ == "__main__":
     app()

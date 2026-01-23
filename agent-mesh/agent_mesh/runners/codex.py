@@ -1,11 +1,10 @@
 """Codex CLI runner."""
 
 import json
-import os
 from typing import Literal
 
 from agent_mesh.runners.base import run_subprocess
-from agent_mesh.types import AgentResult, Usage
+from agent_mesh.types import AgentResult
 
 ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh"]
 

@@ -5,7 +5,7 @@
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License"></a>
-  <a href="#tools"><img src="https://img.shields.io/badge/tools-4-orange?style=flat-square" alt="4 Tools"></a>
+  <a href="#tools"><img src="https://img.shields.io/badge/tools-6-orange?style=flat-square" alt="6 Tools"></a>
 </p>
 
 ---
@@ -16,10 +16,12 @@ A personal collection of MCP servers I built for my Claude Code workflow. Some w
 
 | Hub | Purpose | Backend | Notes |
 |-----|---------|---------|-------|
+| **[agent-mesh](./agent-mesh/)** | Headless agent runners | Claude/Codex/Gemini CLIs | Multi-agent orchestration |
 | **[browser-hub](./browser-hub/)** | Browser automation | [agent-browser](https://github.com/vercel-labs/agent-browser) | 24x token reduction, batch form filling |
 | **[search-hub](./search-hub/)** | Web research | OpenAI API | Synthesized answers with citations |
 | **[image-hub](./image-hub/)** | Image generation | Vertex AI Gemini | Gemini 3 Pro native image gen |
 | **[gdrive-hub](./gdrive-hub/)** | Google Drive access | Google Drive API | Service account auth, Shared Drives |
+| **[google-ads-hub](./google-ads-hub/)** | Google Ads analysis | Google Ads API | Read-only reporting tools |
 
 ## Installation
 
@@ -129,10 +131,12 @@ download_file(file_id="1XYZ...", export_format="pdf")  # Exports Google Docs
 |------------|---------|
 | Python 3.11+ | Runtime |
 | [uv](https://github.com/astral-sh/uv) | Package management |
+| Claude/Codex/Gemini CLIs | agent-mesh |
 | [agent-browser](https://github.com/vercel-labs/agent-browser) | browser-hub (`npm i -g agent-browser && agent-browser install`) |
 | OpenAI API key | search-hub |
 | Google Cloud project | image-hub |
 | Google service account | gdrive-hub (with Drive API access) |
+| Google Ads API credentials | google-ads-hub |
 
 ## License
 

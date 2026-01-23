@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agent_mesh.types import AgentResult, Artifacts, Usage
+from agent_mesh.types import AgentResult
 
 
 async def run_subprocess(

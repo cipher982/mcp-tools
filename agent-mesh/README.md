@@ -23,13 +23,13 @@ If you don't need MCP, use these directly:
 
 ```bash
 # Claude
-claude -p "prompt" --output-format json --dangerously-skip-permissions
+claude-code -p "prompt" --dangerously-skip-permissions
 
 # Codex
-codex --json-events --auto-approve --task "prompt"
+codex-agent low "prompt"
 
 # Gemini
-gemini -p "prompt"
+gemini-agent "prompt"
 ```
 
 ## Claude Code Backends
@@ -38,14 +38,14 @@ Claude Code can use different backends via environment variables:
 
 ```bash
 # Default (Bedrock)
-CLAUDE_CODE_USE_BEDROCK=1 claude -p "prompt"
+CLAUDE_CODE_USE_BEDROCK=1 claude-code -p "prompt"
 
 # Direct Anthropic API
-ANTHROPIC_API_KEY=... claude -p "prompt"
+ANTHROPIC_API_KEY=... claude-code -p "prompt"
 
 # z.ai (GLM models)
 ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic" \
 ANTHROPIC_API_KEY="<zai-key>" \
 ANTHROPIC_MODEL="glm-4.7" \
-claude -p "prompt"
+claude-code -p "prompt"
 ```

@@ -83,7 +83,7 @@ def extract_sources(response) -> list[dict[str, str]]:
     return sources
 
 
-async def _openai_search(task: str, reasoning_effort: str, request_id: str, start_time: float) -> dict:
+async def _openai_search(task: str, reasoning_effort: str) -> dict:
     """OpenAI web search implementation."""
     client = get_openai_client()
 
@@ -115,7 +115,7 @@ async def _openai_search(task: str, reasoning_effort: str, request_id: str, star
     return {"answer": answer or "", "sources": sources}
 
 
-async def _xai_search(task: str, request_id: str, start_time: float) -> dict:
+async def _xai_search(task: str) -> dict:
     """xAI X Search implementation for Twitter/X discussions."""
     client = get_xai_client()
 
@@ -192,11 +192,11 @@ async def web_research(
         if source == "both":
             # Run both searches in parallel with timeout
             openai_task = asyncio.wait_for(
-                _openai_search(task, reasoning_effort, request_id, start_time),
+                _openai_search(task, reasoning_effort),
                 timeout=timeout_seconds
             )
             x_task = asyncio.wait_for(
-                _xai_search(task, request_id, start_time),
+                _xai_search(task),
                 timeout=timeout_seconds
             )
             openai_result, x_result = await asyncio.gather(openai_task, x_task, return_exceptions=True)
@@ -239,7 +239,7 @@ async def web_research(
                     result["errors"]["x"] = x_error
         elif source == "x":
             result_data = await asyncio.wait_for(
-                _xai_search(task, request_id, start_time),
+                _xai_search(task),
                 timeout=timeout_seconds
             )
             result = {
@@ -253,7 +253,7 @@ async def web_research(
             }
         else:
             result_data = await asyncio.wait_for(
-                _openai_search(task, reasoning_effort, request_id, start_time),
+                _openai_search(task, reasoning_effort),
                 timeout=timeout_seconds
             )
             result = {

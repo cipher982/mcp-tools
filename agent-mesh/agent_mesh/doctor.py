@@ -48,17 +48,25 @@ def _run_version(cmd: str) -> str | None:
 def check_binaries() -> dict[str, BinaryCheck]:
     checks: dict[str, BinaryCheck] = {}
 
-    for name in ["claude", "codex", "gemini"]:
-        path = shutil.which(name)
+    binary_map = {
+        "claude": "claude-code",
+        "codex": "codex-agent",
+        "gemini": "gemini-agent",
+    }
+
+    for name, cmd in binary_map.items():
+        path = shutil.which(cmd)
         if not path:
-            checks[name] = BinaryCheck(name=name, ok=False, warning="not found on PATH")
+            checks[name] = BinaryCheck(
+                name=name, ok=False, warning=f"{cmd} not found on PATH"
+            )
             continue
 
         checks[name] = BinaryCheck(
             name=name,
             ok=True,
             path=path,
-            version=_run_version(name),
+            version=_run_version(cmd),
         )
 
     # Add lightweight env warnings (not hard failures)
@@ -123,7 +131,7 @@ async def check_mcp_server_tools(timeout_s: int = 5) -> McpCheck:
             return McpCheck(ok=False, tools=[], error=f"tools/list failed: {tools_resp}")
 
         tools = [t["name"] for t in tools_resp["result"]["tools"]]
-        required = {"claude_run", "codex_exec", "gemini_run"}
+        required = {"claude_run", "codex_run", "gemini_run"}
         missing = sorted(required - set(tools))
         if missing:
             return McpCheck(ok=False, tools=tools, error=f"missing tools: {missing}")
