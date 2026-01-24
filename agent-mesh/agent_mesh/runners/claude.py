@@ -41,7 +41,7 @@ async def run_claude(
     # Use hatch CLI - unified headless agent runner
     # Default to bedrock backend (matches previous behavior)
     backend = "bedrock"
-    cmd = ["hatch", "-b", backend, "--json", prompt]
+    cmd = ["hatch", "-b", backend, "-t", str(timeout_s), "--json", prompt]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s

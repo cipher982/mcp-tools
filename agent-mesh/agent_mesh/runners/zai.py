@@ -25,7 +25,7 @@ async def run_zai(
         ZAI_API_KEY: API key for z.ai backend
     """
     # Use hatch CLI - unified headless agent runner
-    cmd = ["hatch", "-b", "zai", "--json", prompt]
+    cmd = ["hatch", "-b", "zai", "-t", str(timeout_s), "--json", prompt]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s

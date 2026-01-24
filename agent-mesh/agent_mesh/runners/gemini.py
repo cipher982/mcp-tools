@@ -13,7 +13,7 @@ async def run_gemini(prompt: str, cwd: str, timeout_s: int = 1800) -> AgentResul
     tool use, retries, and I/O. The default 30min timeout accounts for this.
     """
     # Use hatch CLI - unified headless agent runner
-    cmd = ["hatch", "-b", "gemini", "--json", prompt]
+    cmd = ["hatch", "-b", "gemini", "-t", str(timeout_s), "--json", prompt]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s
