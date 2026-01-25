@@ -40,7 +40,7 @@ async def zai_run(
 
 @mcp.tool()
 async def codex_run(
-    task: Annotated[str, "The task. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
+    prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
     cwd: Annotated[str, "Working directory"] = ".",
     reasoning_effort: Annotated[str, "Reasoning effort: low, medium, high"] = "low",
 ) -> str:
@@ -48,7 +48,7 @@ async def codex_run(
     from agent_mesh.runners.codex import run_codex
 
     result = await run_codex(
-        task, cwd, 1800,
+        prompt, cwd, 1800,
         json_events=True,
         reasoning_effort=reasoning_effort,  # type: ignore
     )
