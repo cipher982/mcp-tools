@@ -75,6 +75,20 @@ Add to `~/.claude.json`:
 }
 ```
 
+### Registry (optional, easier for agents)
+
+To avoid editing large config files by hand, use the central registry:
+
+```bash
+cd ~/git/mcp-tools
+python registry/sync_mcp.py        # dry-run
+python registry/sync_mcp.py --diff # show changes
+python registry/sync_mcp.py --write
+```
+
+Source of truth: `registry/mcp-registry.toml`.
+Local overrides: `registry/mcp-registry.local.toml` (not committed).
+
 ## Quick Start
 
 ### Browser Automation

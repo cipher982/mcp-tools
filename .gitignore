@@ -49,6 +49,9 @@ htmlcov/
 # Logs
 *.log
 
+# MCP registry local overrides (do not commit)
+registry/mcp-registry.local.toml
+
 # CLAUDE.md symlinks (local-only, never commit)
 CLAUDE.md
 

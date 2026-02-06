@@ -1,0 +1,90 @@
+# Central MCP registry (source of truth) for Claude Code + project MCP configs.
+# Apply with: python registry/sync_mcp.py --write
+# Optional overrides: registry/mcp-registry.local.toml (not committed)
+
+[servers.search-hub]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/mcp-tools/search-hub", "search-hub"]
+env = { OPENAI_API_KEY = "${OPENAI_API_KEY}" }
+
+[servers.agent-mesh]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/mcp-tools/agent-mesh", "agent-mesh"]
+
+[servers.browser-hub]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/mcp-tools/browser-hub", "browser-hub"]
+
+[servers.image-hub]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/mcp-tools/image-hub", "image-hub"]
+env = { GOOGLE_CLOUD_PROJECT = "${GOOGLE_CLOUD_PROJECT}" }
+
+[servers.gdrive-hub]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/mcp-tools/gdrive-hub", "gdrive-hub"]
+env = { GOOGLE_APPLICATION_CREDENTIALS = "/Users/davidrose/.config/gcloud/finance-service-account.json", GDRIVE_DRIVE_ID = "0AM_ENypzD8ZBUk9PVA" }
+
+[servers.gmail]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/mcp-gmail", "mcp", "run", "mcp_gmail/server.py:mcp"]
+env = { MCP_GMAIL_CREDENTIALS_PATH = "/Users/davidrose/git/mcp-gmail/credentials.json", MCP_GMAIL_TOKEN_PATH = "/Users/davidrose/git/mcp-gmail/token.json" }
+
+[servers.life-hub-agents]
+type = "stdio"
+command = "uv"
+args = ["run", "--directory", "/Users/davidrose/git/life-hub", "life-hub-mcp"]
+# Keep secrets out of the registry. sync_mcp.py can preserve existing env values.
+env = { LIFE_HUB_DB_PASSWORD = "${LIFE_HUB_DB_PASSWORD}" }
+
+[servers.claude-session-history]
+type = "stdio"
+command = "uvx"
+args = ["--from", "/Users/davidrose/git/claude-session-mcp", "claude-session-mcp"]
+
+[servers.context7]
+type = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp", "--api-key", "ctx7sk-REPLACE_ME"]
+
+[servers.atlassian]
+type = "stdio"
+command = "npx"
+args = ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
+env = {}
+
+[targets.claude_user]
+type = "claude_user"
+path = "~/.claude.json"
+servers = ["search-hub", "agent-mesh", "browser-hub", "image-hub", "gdrive-hub", "gmail", "life-hub-agents", "context7"]
+mode = "merge"
+keep_env = true
+
+[targets.zeta_project]
+type = "project"
+path = "/Users/davidrose/git/zeta/.mcp.json"
+servers = ["atlassian"]
+mode = "replace"
+
+[targets.gemini_user]
+type = "gemini_user"
+path = "~/.gemini/settings.json"
+servers = ["agent-mesh", "browser-hub", "gdrive-hub", "context7"]
+mode = "merge"
+keep_env = true
+strip_fields = ["type"]
+
+[targets.codex_user]
+type = "codex_user"
+path = "~/.codex/config.toml"
+servers = ["claude-session-history", "context7", "agent-mesh", "gdrive-hub"]
+mode = "merge"
+keep_env = true
+keep_existing = false
+overrides = { agent-mesh = { tool_timeout_sec = 1800 } }

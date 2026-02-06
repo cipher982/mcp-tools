@@ -2,8 +2,8 @@
 Search Hub - Lightweight MCP facade for web search.
 
 Supports:
-- OpenAI (GPT-5.2 + web search) for general research
-- xAI (Grok + X Search) for Twitter/X discussions
+- OpenAI (GPT-5.2 + web_search tool) for general research
+- xAI (Grok-4-1-fast + x_search tool) for Twitter/X discussions
 """
 
 import asyncio
@@ -15,6 +15,9 @@ import uuid
 from typing import Literal
 from fastmcp import FastMCP
 from openai import AsyncOpenAI
+from xai_sdk import AsyncClient as XaiAsyncClient
+from xai_sdk.chat import user as xai_user
+from xai_sdk.tools import x_search
 
 # Create the hub server
 mcp = FastMCP(
@@ -28,7 +31,7 @@ mcp = FastMCP(
     Sources:
     - "openai" (default): GPT-5.2 with web search for general research
     - "x": Grok with X Search for Twitter/X discussions and trends
-    - "both": Run both in parallel (~52s), returns separate answers
+    - "both": Run both in parallel, returns separate answers
     """
 )
 
@@ -48,17 +51,14 @@ def get_openai_client() -> AsyncOpenAI:
     return _openai_client
 
 
-def get_xai_client() -> AsyncOpenAI:
-    """Get or create async xAI client (OpenAI-compatible)."""
+def get_xai_client() -> XaiAsyncClient:
+    """Get or create async xAI client (native SDK)."""
     global _xai_client
     if _xai_client is None:
         api_key = os.getenv("XAI_API_KEY")
         if not api_key:
             raise ValueError("XAI_API_KEY environment variable not set")
-        _xai_client = AsyncOpenAI(
-            api_key=api_key,
-            base_url="https://api.x.ai/v1"
-        )
+        _xai_client = XaiAsyncClient(api_key=api_key)
     return _xai_client
 
 
@@ -90,7 +90,7 @@ async def _openai_search(task: str, reasoning_effort: str) -> dict:
     response = await client.responses.create(
         model="gpt-5.2",
         input=task,
-        tools=[{"type": "web_search_preview"}],
+        tools=[{"type": "web_search"}],
         include=["web_search_call.action.sources"],
         reasoning={"effort": reasoning_effort},
     )
@@ -119,34 +119,23 @@ async def _xai_search(task: str) -> dict:
     """xAI X Search implementation for Twitter/X discussions."""
     client = get_xai_client()
 
-    response = await client.chat.completions.create(
-        model="grok-4-1-fast-non-reasoning",
-        messages=[{"role": "user", "content": task}],
-        extra_body={
-            "search_parameters": {
-                "mode": "auto",
-                "sources": [{"type": "x"}],  # X/Twitter only
-            }
-        }
+    # Create chat with X search tool enabled
+    chat = client.chat.create(
+        model="grok-4-1-fast",
+        tools=[x_search()],
     )
 
-    # Guard against empty choices
-    if not response.choices:
-        return {"answer": "", "sources": []}
+    # Add user message and get response
+    chat.append(xai_user(task))
+    response = await chat.sample()
 
-    # Extract answer from chat completion
-    answer = response.choices[0].message.content or ""
+    # Extract answer
+    answer = response.content if hasattr(response, 'content') else str(response)
 
-    # Extract sources - xAI returns citations at response level or on message
+    # Extract sources from citations
     sources = []
-    citations = None
     if hasattr(response, 'citations') and response.citations:
-        citations = response.citations
-    elif hasattr(response.choices[0].message, 'citations') and response.choices[0].message.citations:
-        citations = response.choices[0].message.citations
-
-    if citations:
-        for url in citations:
+        for url in response.citations:
             sources.append({"url": url})
 
     return {"answer": answer, "sources": sources}
@@ -166,8 +155,8 @@ async def web_research(
     Bad: "xAI API docs" or "Grok tool calling"
 
     Sources:
-    - "openai" (default): GPT-5.2 with web search for general research
-    - "x": Grok with X Search for Twitter/X discussions and trends
+    - "openai" (default): GPT-5.2 with web_search tool for general research
+    - "x": Grok-4-1-fast with x_search tool for Twitter/X discussions and trends
     - "both": Run both in parallel, returns separate answers
 
     ONE call is sufficient - the model runs multiple searches internally.
