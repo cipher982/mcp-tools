@@ -36,6 +36,10 @@ mcp = FastMCP(
 
     Element refs (@e1, @e2) come from the accessibility tree. Snapshots are filtered to
     interactive elements only (~500 tokens vs ~12k raw).
+
+    PARALLEL CALLS: MCP runs tool calls serially. To run multiple browser
+    operations in parallel (e.g. across sessions), use batch() instead of
+    separate tool calls.
     """
 )
 

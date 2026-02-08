@@ -32,6 +32,11 @@ mcp = FastMCP(
     - "openai" (default): GPT-5.2 with web search for general research
     - "x": Grok with X Search for Twitter/X discussions and trends
     - "both": Run both in parallel, returns separate answers
+
+    PARALLEL CALLS: MCP runs tool calls serially. To run multiple searches
+    in parallel, use batch() instead of separate web_research calls.
+    Example: batch(calls=[{"tool": "web_research", "args": {"task": "..."}},
+                          {"tool": "web_research", "args": {"task": "..."}}])
     """
 )
 

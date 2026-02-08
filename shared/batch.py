@@ -54,6 +54,10 @@ def add_batch_support(mcp_server, tools: dict[str, callable], max_concurrent: in
         """
         Execute multiple tool calls in parallel.
 
+        IMPORTANT: MCP processes tool calls serially. When you need to run
+        multiple operations from this server at once, use batch() instead of
+        making separate tool calls — separate calls run one-at-a-time.
+
         Args:
             calls: List of {tool: str, args: dict} objects
                    Example: [{"tool": "web_research", "args": {"task": "..."}}, ...]

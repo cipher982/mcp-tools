@@ -30,6 +30,9 @@ mcp = FastMCP(
 
     Images saved to ~/Pictures/image-hub/ by default.
     Requires GOOGLE_APPLICATION_CREDENTIALS for Vertex AI auth.
+
+    PARALLEL CALLS: MCP runs tool calls serially. To run multiple image
+    operations in parallel, use batch() instead of separate tool calls.
     """
 )
 

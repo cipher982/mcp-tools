@@ -30,6 +30,9 @@ mcp = FastMCP(
     - create_folder: Create new folder
 
     Requires GOOGLE_APPLICATION_CREDENTIALS and optionally GDRIVE_DRIVE_ID.
+
+    PARALLEL CALLS: MCP runs tool calls serially. To run multiple Drive
+    operations in parallel, use batch() instead of separate tool calls.
     """
 )
 
