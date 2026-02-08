@@ -169,40 +169,24 @@ async def web_research(
     """
     request_id = uuid.uuid4().hex[:6]
     start_time = time.time()
-    timeout_seconds = 300  # 5 minute timeout
     print(f"[{request_id}] STARTED source={source} - task: {task[:50]}...", file=sys.stderr, flush=True)
-
-    def _format_error(exc: Exception, provider: str) -> dict:
-        """Format an exception as a structured error dict."""
-        error_str = str(exc).lower()
-        is_timeout = isinstance(exc, asyncio.TimeoutError)
-        retriable = is_timeout or isinstance(exc, (OSError, ConnectionError, TimeoutError))
-        if "rate" in error_str or "429" in error_str or "timeout" in error_str:
-            retriable = True
-        error_msg = f"{provider} search timed out after {timeout_seconds}s" if is_timeout else str(exc)
-        return {"error": error_msg, "retriable": retriable}
 
     try:
         if source == "both":
-            # Run both searches in parallel with timeout
-            openai_task = asyncio.wait_for(
+            openai_result, x_result = await asyncio.gather(
                 _openai_search(task, reasoning_effort),
-                timeout=timeout_seconds
-            )
-            x_task = asyncio.wait_for(
                 _xai_search(task),
-                timeout=timeout_seconds
+                return_exceptions=True,
             )
-            openai_result, x_result = await asyncio.gather(openai_task, x_task, return_exceptions=True)
 
-            # Handle potential errors from either with structured error info
+            # Handle potential errors from either
             if isinstance(openai_result, dict):
                 openai_answer = openai_result.get("answer", "")
                 openai_sources = openai_result.get("sources", [])
                 openai_error = None
             else:
-                openai_error = _format_error(openai_result, "OpenAI")
-                openai_answer = openai_error["error"]
+                openai_error = str(openai_result)
+                openai_answer = openai_error
                 openai_sources = []
 
             if isinstance(x_result, dict):
@@ -210,8 +194,8 @@ async def web_research(
                 x_sources = x_result.get("sources", [])
                 x_error = None
             else:
-                x_error = _format_error(x_result, "xAI")
-                x_answer = x_error["error"]
+                x_error = str(x_result)
+                x_answer = x_error
                 x_sources = []
 
             result = {
@@ -224,7 +208,6 @@ async def web_research(
                     "duration_sec": time.time() - start_time
                 }
             }
-            # Add structured errors if any occurred
             if openai_error or x_error:
                 result["errors"] = {}
                 if openai_error:
@@ -232,10 +215,7 @@ async def web_research(
                 if x_error:
                     result["errors"]["x"] = x_error
         elif source == "x":
-            result_data = await asyncio.wait_for(
-                _xai_search(task),
-                timeout=timeout_seconds
-            )
+            result_data = await _xai_search(task)
             result = {
                 "answer": result_data["answer"],
                 "sources": result_data["sources"],
@@ -246,10 +226,7 @@ async def web_research(
                 }
             }
         else:
-            result_data = await asyncio.wait_for(
-                _openai_search(task, reasoning_effort),
-                timeout=timeout_seconds
-            )
+            result_data = await _openai_search(task, reasoning_effort)
             result = {
                 "answer": result_data["answer"],
                 "sources": result_data["sources"],
@@ -260,32 +237,21 @@ async def web_research(
                 }
             }
 
-        end_time = time.time()
-        print(f"[{request_id}] FINISHED - duration: {end_time - start_time:.2f}s", file=sys.stderr, flush=True)
-
+        print(f"[{request_id}] FINISHED - duration: {time.time() - start_time:.2f}s", file=sys.stderr, flush=True)
         return json.dumps(result, indent=2)
 
     except Exception as e:
-        end_time = time.time()
-        print(f"[{request_id}] ERROR - duration: {end_time - start_time:.2f}s - {e}", file=sys.stderr, flush=True)
-
-        is_timeout = isinstance(e, asyncio.TimeoutError)
-        retriable = is_timeout or isinstance(e, (OSError, ConnectionError, TimeoutError))
-        error_str = str(e).lower()
-        if "rate" in error_str or "429" in error_str or "timeout" in error_str:
-            retriable = True
-
-        error_msg = f"Search timed out after {timeout_seconds}s" if is_timeout else str(e)
+        duration = time.time() - start_time
+        print(f"[{request_id}] ERROR - duration: {duration:.2f}s - {e}", file=sys.stderr, flush=True)
 
         error_result = {
-            "error": error_msg,
+            "error": str(e),
             "answer": None,
             "sources": [],
             "source": source,
-            "retriable": retriable,
             "timing": {
                 "request_id": request_id,
-                "duration_sec": end_time - start_time
+                "duration_sec": duration
             }
         }
         return json.dumps(error_result, indent=2)
