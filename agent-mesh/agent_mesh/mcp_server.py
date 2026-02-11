@@ -23,7 +23,7 @@ async def claude_run(
     from agent_mesh.runners.claude import run_claude
 
     result = await run_claude(prompt, cwd, 1800, auto_approve=True, model=model)
-    return result.model_dump_json(indent=2)
+    return result.model_dump_json()
 
 
 @mcp.tool()
@@ -35,7 +35,7 @@ async def zai_run(
     from agent_mesh.runners.zai import run_zai
 
     result = await run_zai(prompt, cwd, 1800)
-    return result.model_dump_json(indent=2)
+    return result.model_dump_json()
 
 
 @mcp.tool()
@@ -52,7 +52,7 @@ async def codex_run(
         json_events=True,
         reasoning_effort=reasoning_effort,  # type: ignore
     )
-    return result.model_dump_json(indent=2)
+    return result.model_dump_json()
 
 
 @mcp.tool()
@@ -64,7 +64,7 @@ async def gemini_run(
     from agent_mesh.runners.gemini import run_gemini
 
     result = await run_gemini(prompt, cwd, 1800)
-    return result.model_dump_json(indent=2)
+    return result.model_dump_json()
 
 
 def main():

@@ -43,16 +43,12 @@ async def run_zai(
             data = json.loads(stdout)
             structured = data
             is_error = not data.get("ok", False)
-            if "output" in data:
-                structured["result"] = data["output"]
+            # Drop stderr from structured — it contains the full session transcript
+            # (tool calls, thinking, MCP logs) and is the main source of token bloat.
+            # The final AI response in "output" is naturally bounded.
+            structured.pop("stderr", None)
         except json.JSONDecodeError:
-            structured = {"raw_output": stdout[:2000]}
-
-    # Truncate stdout to avoid context blowup
-    max_stdout = 2000
-    truncated_stdout = stdout[:max_stdout]
-    if len(stdout) > max_stdout:
-        truncated_stdout += f"\n... [truncated {len(stdout) - max_stdout} chars]"
+            structured = {"raw_output": stdout[:5000]}
 
     return AgentResult(
         agent="zai",
@@ -62,8 +58,8 @@ async def run_zai(
         started_at=started_at,
         ended_at=ended_at,
         duration_ms=duration_ms,
-        stdout=truncated_stdout,
-        stderr=stderr,
+        stdout="",
+        stderr="",
         structured=structured,
         usage=usage,
     )

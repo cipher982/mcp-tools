@@ -46,22 +46,17 @@ async def run_codex(
 
     # Parse JSON output from hatch
     structured: dict = {}
-    response_text: str | None = None
 
     if stdout.strip():
         try:
             data = json.loads(stdout)
-            if data.get("ok"):
-                response_text = data.get("output", "")
             structured = data
+            # Drop stderr from structured — it contains the full session transcript
+            # (tool calls, thinking, MCP logs) and is the main source of token bloat.
+            # The final AI response in "output" is naturally bounded.
+            structured.pop("stderr", None)
         except json.JSONDecodeError:
-            structured = {"raw_output": stdout[:2000]}
-
-    # Truncate stdout to avoid context blowup
-    max_stdout = 2000
-    truncated_stdout = stdout[:max_stdout]
-    if len(stdout) > max_stdout:
-        truncated_stdout += f"\n... [truncated {len(stdout) - max_stdout} chars]"
+            structured = {"raw_output": stdout[:5000]}
 
     return AgentResult(
         agent="codex",
@@ -71,7 +66,7 @@ async def run_codex(
         started_at=started_at,
         ended_at=ended_at,
         duration_ms=duration_ms,
-        stdout=truncated_stdout,
-        stderr=stderr,
+        stdout="",
+        stderr="",
         structured=structured,
     )
