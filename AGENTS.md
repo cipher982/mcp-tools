@@ -12,7 +12,7 @@ Lightweight MCP server facades that reduce token usage. Each hub wraps a heavier
 | image-hub | Image generation | Vertex AI Gemini |
 | gdrive-hub | Google Drive access | Google Drive API |
 | gmail | Email access | Gmail API (external repo) |
-| life-hub-agents | Tasks, insights, smart home | Life-Hub (external repo) |
+| life-hub-agents | Tasks, insights, smart home, session search/recall | Life-Hub (external repo) |
 | context7 | Library docs lookup | Upstash Context7 (npx) |
 | claude-session-history | Session history | claude-session-mcp (external) |
 | atlassian | Jira/Confluence | MCP remote bridge |

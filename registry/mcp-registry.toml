@@ -41,12 +41,7 @@ type = "stdio"
 command = "uv"
 args = ["run", "--directory", "/Users/davidrose/git/life-hub", "life-hub-mcp"]
 # Keep secrets out of the registry. sync_mcp.py can preserve existing env values.
-env = { LIFE_HUB_DB_PASSWORD = "${LIFE_HUB_DB_PASSWORD}" }
-
-[servers.claude-session-history]
-type = "stdio"
-command = "uvx"
-args = ["--from", "/Users/davidrose/git/claude-session-mcp", "claude-session-mcp"]
+env = { LIFE_HUB_DB_PASSWORD = "${LIFE_HUB_DB_PASSWORD}", OPENAI_API_KEY = "${OPENAI_API_KEY}" }
 
 [servers.context7]
 type = "stdio"
@@ -83,7 +78,7 @@ strip_fields = ["type"]
 [targets.codex_user]
 type = "codex_user"
 path = "~/.codex/config.toml"
-servers = ["claude-session-history", "context7", "agent-mesh", "gdrive-hub"]
+servers = ["life-hub-agents", "context7", "agent-mesh", "gdrive-hub"]
 mode = "merge"
 keep_env = true
 keep_existing = false
