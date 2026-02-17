@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 # Create MCP server
 mcp = FastMCP(
     name="agent-mesh",
-    instructions="Agent mesh for headless CLI coordination. 4 agents: Claude (Bedrock), z.ai (GLM-4.7), Codex (GPT-5.2), Gemini.",
+    instructions="Agent mesh for headless CLI coordination. 4 agents: Claude (Bedrock), z.ai (GLM-5), Codex (GPT-5.2), Gemini.",
 )
 
 
@@ -31,7 +31,7 @@ async def zai_run(
     prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
     cwd: Annotated[str, "Working directory"] = ".",
 ) -> str:
-    """Run Claude Code CLI with z.ai backend (GLM-4.7). Full agentic workflow with tool use. Default 30min timeout. Requires ZAI_API_KEY."""
+    """Run Claude Code CLI with z.ai backend (GLM-5). Full agentic workflow with tool use. Default 30min timeout."""
     from agent_mesh.runners.zai import run_zai
 
     result = await run_zai(prompt, cwd, 1800)
@@ -60,7 +60,7 @@ async def gemini_run(
     prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
     cwd: Annotated[str, "Working directory"] = ".",
 ) -> str:
-    """Run Gemini CLI in headless mode. Full agentic workflow with tool use. Default 30min timeout. Requires GEMINI_API_KEY."""
+    """Run Gemini CLI in headless mode. Full agentic workflow with tool use. Default 30min timeout."""
     from agent_mesh.runners.gemini import run_gemini
 
     result = await run_gemini(prompt, cwd, 1800)
