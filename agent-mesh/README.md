@@ -20,7 +20,7 @@ uv run agent-mesh
 
 ## Direct CLI (without MCP)
 
-Uses `hatch` CLI (`uv tool install -e ~/git/hatch`):
+Uses `hatch` CLI (`uv tool install -e ~/git/zerg/packages/hatch-agent`):
 
 ```bash
 hatch "prompt"                    # z.ai (default)
