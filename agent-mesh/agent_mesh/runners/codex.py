@@ -36,7 +36,13 @@ async def run_codex(
         OPENAI_API_KEY: Required for Codex API access
     """
     # Use hatch CLI - unified headless agent runner
-    cmd = ["hatch", "-b", "codex", "-t", str(timeout_s), "--json", task]
+    cmd = [
+        "hatch", "-b", "codex",
+        "-t", str(timeout_s),
+        "--model", model,
+        "--reasoning-effort", reasoning_effort,
+        "--json", task,
+    ]
 
     exit_code, stdout, stderr, started_at, ended_at = await run_subprocess(
         cmd, cwd, timeout_s
