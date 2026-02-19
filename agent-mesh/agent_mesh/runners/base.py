@@ -1,10 +1,41 @@
 """Base runner utilities and dispatcher."""
 
 import asyncio
+import contextlib
+import os
+import signal
 from datetime import datetime, timezone
 from pathlib import Path
 
 from agent_mesh.types import AgentResult
+
+
+async def _terminate_then_kill(proc: asyncio.subprocess.Process, kill_grace_s: float = 3.0) -> None:
+    """Gracefully stop a subprocess: SIGTERM first, escalate to SIGKILL if needed.
+
+    Uses start_new_session=True (set at spawn time) so terminate/kill hit the
+    entire process group, not just the immediate child — important when the child
+    itself spawns agents (hatch → codex/claude/gemini).
+    """
+    if proc.returncode is not None:
+        return  # already exited
+
+    # 1) Polite: SIGTERM to the process group so children get it too
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGTERM)
+
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(proc.wait(), timeout=kill_grace_s)
+
+    if proc.returncode is not None:
+        return
+
+    # 2) Forceful: SIGKILL the process group
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGKILL)
+
+    # Always reap to avoid zombies, even after SIGKILL
+    await proc.wait()
 
 
 async def run_subprocess(
@@ -17,9 +48,8 @@ async def run_subprocess(
 
     Always returns a tuple, even on errors (FileNotFoundError, permission errors, etc).
     On timeout, returns partial output captured so far rather than losing everything.
+    On cancellation (e.g. client pressed Escape), kills the subprocess before re-raising.
     """
-    import os
-
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
@@ -34,6 +64,7 @@ async def run_subprocess(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=full_env,
+            start_new_session=True,  # New process group so killpg reaches all children
         )
     except FileNotFoundError as e:
         ended_at = datetime.now(timezone.utc)
@@ -69,13 +100,16 @@ async def run_subprocess(
             timeout=timeout_s,
         )
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+        await asyncio.shield(_terminate_then_kill(proc))
         ended_at = datetime.now(timezone.utc)
         stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
         stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
         timeout_msg = f"\n\n[TIMEOUT after {timeout_s}s - partial output above]"
         return -1, stdout, stderr + timeout_msg, started_at, ended_at
+    except asyncio.CancelledError:
+        # Client disconnected (e.g. Escape in Claude Code) — kill subprocess before propagating
+        await asyncio.shield(_terminate_then_kill(proc))
+        raise
 
     ended_at = datetime.now(timezone.utc)
     return (
