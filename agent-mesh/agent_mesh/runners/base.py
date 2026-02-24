@@ -51,6 +51,9 @@ async def run_subprocess(
     On cancellation (e.g. client pressed Escape), kills the subprocess before re-raising.
     """
     full_env = os.environ.copy()
+    # Mark all agent-mesh sub-agents as sidechain so Longhouse hides them from the timeline.
+    # The Stop hook inherits this env var and passes it to `longhouse-engine ship`.
+    full_env["LONGHOUSE_IS_SIDECHAIN"] = "1"
     if env:
         full_env.update(env)
 
