@@ -1,10 +1,16 @@
 """MCP server exposing agent-mesh tools for stdio transport."""
 
 import asyncio
+import os
 import sys
 from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
+
+# Capture the host agent's working directory at server startup.
+# MCP servers inherit the spawning process's cwd, so this is always the
+# directory the host agent (Claude Code, etc.) was running in.
+_HOST_CWD = os.getcwd()
 
 # Create MCP server
 mcp = FastMCP(
@@ -16,39 +22,39 @@ mcp = FastMCP(
 @mcp.tool()
 async def claude_run(
     prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
-    cwd: Annotated[str, "Working directory"] = ".",
+    cwd: Annotated[str, "Working directory (defaults to host agent's cwd)"] = "",
     model: Annotated[str | None, "Model ID (e.g., us.anthropic.claude-sonnet-4-5-20250929-v1:0)"] = None,
 ) -> str:
     """Run Claude Code CLI with AWS Bedrock (Claude Sonnet). Full agentic workflow with tool use. Default 30min timeout."""
     from agent_mesh.runners.claude import run_claude
 
-    result = await run_claude(prompt, cwd, 1800, auto_approve=True, model=model)
+    result = await run_claude(prompt, cwd or _HOST_CWD, 1800, auto_approve=True, model=model)
     return result.model_dump_json()
 
 
 @mcp.tool()
 async def zai_run(
     prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
-    cwd: Annotated[str, "Working directory"] = ".",
+    cwd: Annotated[str, "Working directory (defaults to host agent's cwd)"] = "",
 ) -> str:
     """Run Claude Code CLI with z.ai backend (GLM-5). Full agentic workflow with tool use. Default 30min timeout."""
     from agent_mesh.runners.zai import run_zai
 
-    result = await run_zai(prompt, cwd, 1800)
+    result = await run_zai(prompt, cwd or _HOST_CWD, 1800)
     return result.model_dump_json()
 
 
 @mcp.tool()
 async def codex_run(
     prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
-    cwd: Annotated[str, "Working directory"] = ".",
+    cwd: Annotated[str, "Working directory (defaults to host agent's cwd)"] = "",
     reasoning_effort: Annotated[str, "Reasoning effort: low, medium, high"] = "low",
 ) -> str:
     """Run Codex CLI (gpt-5.2-codex) in headless mode. Full agentic workflow with tool use. Default 30min timeout. Use higher reasoning_effort for complex tasks."""
     from agent_mesh.runners.codex import run_codex
 
     result = await run_codex(
-        prompt, cwd, 1800,
+        prompt, cwd or _HOST_CWD, 1800,
         json_events=True,
         reasoning_effort=reasoning_effort,  # type: ignore
     )
@@ -58,12 +64,12 @@ async def codex_run(
 @mcp.tool()
 async def gemini_run(
     prompt: Annotated[str, "The task or prompt. Include project context (audience, principles like YAGNI, what NOT to do) to avoid enterprise-pattern defaults"],
-    cwd: Annotated[str, "Working directory"] = ".",
+    cwd: Annotated[str, "Working directory (defaults to host agent's cwd)"] = "",
 ) -> str:
     """Run Gemini CLI in headless mode. Full agentic workflow with tool use. Default 30min timeout."""
     from agent_mesh.runners.gemini import run_gemini
 
-    result = await run_gemini(prompt, cwd, 1800)
+    result = await run_gemini(prompt, cwd or _HOST_CWD, 1800)
     return result.model_dump_json()
 
 
