@@ -7,10 +7,32 @@ from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
 
-# Capture the host agent's working directory at server startup.
-# MCP servers inherit the spawning process's cwd, so this is always the
-# directory the host agent (Claude Code, etc.) was running in.
-_HOST_CWD = os.getcwd()
+
+def _find_host_cwd() -> str:
+    """Walk up the process tree to find the host agent's working directory.
+
+    The MCP server is spawned by the agent CLI (e.g. `uv run agent-mesh`),
+    which is in turn started by Claude Code / Codex / Gemini from their
+    project directory. We walk ancestors until we find one whose cwd contains
+    a .git directory — that's the project root the host agent is working in.
+    Falls back to os.getcwd() (server's own directory) if nothing is found.
+    """
+    try:
+        import psutil
+        proc = psutil.Process()
+        for ancestor in proc.parents():
+            try:
+                cwd = ancestor.cwd()
+                if os.path.isdir(cwd) and os.path.exists(os.path.join(cwd, ".git")):
+                    return cwd
+            except (psutil.AccessDenied, psutil.NoSuchProcess, PermissionError):
+                continue
+    except Exception:
+        pass
+    return os.getcwd()
+
+
+_HOST_CWD = _find_host_cwd()
 
 # Create MCP server
 mcp = FastMCP(
